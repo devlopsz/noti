@@ -1,0 +1,752 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Checklist OS: notas, checklists, pastas, fixados e lixeira com salvamento local."
+    />
+    <title>Noti.</title>
+    <link id="favicon" rel="icon" type="image/x-icon" href="assets/white-icon-noti.ico" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <svg aria-hidden="true" class="icon-sprite">
+      <symbol id="icon-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14" />
+      </symbol>
+      <symbol id="icon-minus" viewBox="0 0 24 24">
+        <path d="M5 12h14" />
+      </symbol>
+      <symbol id="icon-undo" viewBox="0 0 24 24">
+        <path d="M9 7H4v5" />
+        <path d="M4 12a7 7 0 1 0 2.1-5" />
+      </symbol>
+      <symbol id="icon-redo" viewBox="0 0 24 24">
+        <path d="M15 7h5v5" />
+        <path d="M20 12a7 7 0 1 1-2.1-5" />
+      </symbol>
+      <symbol id="icon-folder" viewBox="0 0 24 24">
+        <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z" />
+      </symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24">
+        <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+      </symbol>
+      
+      <symbol id="icon-pin" viewBox="0 0 24 24">
+        <path d="M8 3h8l-1.2 7.5 4.2 3.2V16H5v-2.3l4.2-3.2Z" />
+        <path d="M12 16v6" />
+      </symbol>
+      <symbol id="icon-sun" viewBox="0 0 24 24">
+        <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />
+      </symbol>
+      <symbol id="icon-moon" viewBox="0 0 24 24">
+        <path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z" />
+      </symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24">
+        <path d="m21 21-4.5-4.5M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" />
+      </symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24">
+        <path d="m5 12 4 4L19 6" />
+      </symbol>
+      <symbol id="icon-note" viewBox="0 0 24 24">
+        <path d="M7 3h7l4 4v14H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+        <path d="M14 3v5h5M8 13h8M8 17h6" />
+      </symbol>
+      <symbol id="icon-list" viewBox="0 0 24 24">
+        <path d="M9 7h11M9 12h11M9 17h11M4 7h.01M4 12h.01M4 17h.01" />
+      </symbol>
+      <symbol id="icon-menu" viewBox="0 0 24 24">
+        <path d="M4 7h16M4 12h16M4 17h16" />
+      </symbol>
+      <symbol id="icon-sidebar" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <path d="M9 4v16" />
+      </symbol>
+      <symbol id="icon-chevron-down" viewBox="0 0 24 24">
+        <path d="m6 9 6 6 6-6" />
+      </symbol>
+      <symbol id="icon-more" viewBox="0 0 24 24">
+        <path d="M12 6h.01M12 12h.01M12 18h.01" />
+      </symbol>
+      <symbol id="icon-x" viewBox="0 0 24 24">
+        <path d="m6 6 12 12M18 6 6 18" />
+      </symbol>
+      <symbol id="icon-restore" viewBox="0 0 24 24">
+        <path d="M3 12a9 9 0 1 0 3-6.7M3 4v6h6" />
+      </symbol>
+      <symbol id="icon-paperclip" viewBox="0 0 24 24">
+        <path d="m21.4 11.6-8.6 8.6a6 6 0 0 1-8.5-8.5l9.4-9.4a4 4 0 0 1 5.7 5.7L10 17.4a2 2 0 0 1-2.8-2.8l8.6-8.6" />
+      </symbol>
+      <symbol id="icon-image" viewBox="0 0 24 24">
+        <path d="M5 5h14v14H5z" />
+        <path d="m5 15 4-4 3 3 2-2 5 5M9 8.5h.01" />
+      </symbol>
+      <symbol id="icon-file" viewBox="0 0 24 24">
+        <path d="M7 3h7l4 4v14H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+        <path d="M14 3v5h5" />
+      </symbol>
+      <symbol id="icon-cart" viewBox="0 0 24 24">
+        <path d="M6 6h15l-2 8H8L6 3H3" />
+        <path d="M9 20h.01M18 20h.01" />
+      </symbol>
+      <symbol id="icon-target" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8" />
+        <circle cx="12" cy="12" r="3" />
+        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+      </symbol>
+      <symbol id="icon-dollar" viewBox="0 0 24 24">
+        <path d="M12 2v20M17 6.5c-1.1-.8-2.4-1.2-4-1.2-2.4 0-4 1.2-4 3 0 4.2 8 2.2 8 6.8 0 1.9-1.7 3.2-4.4 3.2-1.8 0-3.4-.5-4.6-1.5" />
+      </symbol>
+      <symbol id="icon-calendar" viewBox="0 0 24 24">
+        <path d="M7 3v4M17 3v4M4 9h16M6 5h12a2 2 0 0 1 2 2v13H4V7a2 2 0 0 1 2-2Z" />
+      </symbol>
+      <symbol id="icon-bell" viewBox="0 0 24 24">
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" />
+        <path d="M10 21h4" />
+      </symbol>
+      
+      <symbol id="icon-settings" viewBox="0 0 24 24">
+        <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+        <path d="M19.4 13.5a7.8 7.8 0 0 0 .1-1.5 7.8 7.8 0 0 0-.1-1.5l2-1.5-2-3.4-2.4 1a7.7 7.7 0 0 0-2.6-1.5L14 2h-4l-.4 3.1a7.7 7.7 0 0 0-2.6 1.5l-2.4-1-2 3.4 2 1.5A7.8 7.8 0 0 0 4.5 12c0 .5 0 1 .1 1.5l-2 1.5 2 3.4 2.4-1a7.7 7.7 0 0 0 2.6 1.5L10 22h4l.4-3.1a7.7 7.7 0 0 0 2.6-1.5l2.4 1 2-3.4Z" />
+      </symbol>
+      <symbol id="icon-user" viewBox="0 0 24 24">
+        <path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Z" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </symbol>
+      
+      <symbol id="icon-archive" viewBox="0 0 24 24">
+        <path d="M4 4h16v5H4zM6 9v11h12V9" />
+        <path d="M10 13h4" />
+      </symbol>
+      <symbol id="icon-log-out" viewBox="0 0 24 24">
+        <path d="M10 17l5-5-5-5M15 12H3" />
+        <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" />
+      </symbol>
+      <symbol id="icon-edit" viewBox="0 0 24 24">
+        <path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16z" />
+        <path d="m13.5 6.5 4 4" />
+      </symbol>
+      <symbol id="icon-chevron" viewBox="0 0 24 24">
+        <path d="m9 18 6-6-6-6" />
+      </symbol>
+      <symbol id="icon-grip" viewBox="0 0 24 24">
+        <path d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01" />
+      </symbol>
+      <symbol id="icon-sparkle" viewBox="0 0 24 24">
+        <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" />
+        <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z" />
+      </symbol>
+      <symbol id="icon-coffee" viewBox="0 0 24 24">
+        <path d="M5 8h11v5a5 5 0 0 1-5 5H10a5 5 0 0 1-5-5Z" />
+        <path d="M16 9h2.5a2.5 2.5 0 0 1 0 5H16" />
+        <path d="M8 3v2M12 3v2M3 21h17" />
+      </symbol>
+      <symbol id="icon-palette" viewBox="0 0 24 24">
+        <path d="M12 3a9 9 0 0 0 0 18h1.5a1.8 1.8 0 0 0 1.3-3.1 1.8 1.8 0 0 1 1.3-3.1H17a6 6 0 0 0 0-12h-5Z" />
+        <path d="M7.5 10h.01M10 7h.01M14 7.5h.01M6.5 14h.01" />
+      </symbol>
+      <symbol id="icon-pen" viewBox="0 0 24 24">
+        <path d="M4 20h4.2L19.1 9.1a2.9 2.9 0 0 0-4.2-4.2L4 15.8V20Z" />
+        <path d="m13.7 6.1 4.2 4.2" />
+      </symbol>
+      <symbol id="icon-square-pen" viewBox="0 0 24 24">
+        <path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" />
+        <path d="M14 15h3l3.6-3.6a2.1 2.1 0 0 0-3-3L14 12v3Z" />
+        <path d="m17.2 8.8 3 3" />
+      </symbol>
+    </svg>
+
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar" aria-label="Navegação">
+        <div class="brand">
+          <button class="icon-button mobile-only" id="closeSidebarButton" aria-label="Fechar menu">
+            <svg><use href="#icon-x"></use></svg>
+          </button>
+          <div>
+            <section class="brand-mark-wrap"><img class="brand-mark" id="brandMark" src="assets/dark-logo-noti.png" alt="Noti." /></section>
+            <p class="brand-credit">by Lopsz</p>
+          </div>
+        </div>
+
+        <nav class="nav-block" aria-label="Coleções">
+          <button class="nav-item active" data-view="all" title="Todas">
+            <span>
+              <svg><use href="#icon-note"></use></svg>
+              <span class="sidebar-label">Todas</span>
+            </span>
+            <strong id="allCount">0</strong>
+          </button>
+          <button class="nav-item" data-view="pinned" title="Fixadas">
+            <span>
+              <svg><use href="#icon-pin"></use></svg>
+              <span class="sidebar-label">Fixadas</span>
+            </span>
+            <strong id="pinnedCount">0</strong>
+          </button>
+          <button class="nav-item" data-view="trash" title="Lixeira">
+            <span>
+              <svg><use href="#icon-trash"></use></svg>
+              <span class="sidebar-label">Lixeira</span>
+            </span>
+            <strong id="trashCount">0</strong>
+          </button>
+        </nav>
+
+        <section class="folders-section" aria-label="Pastas">
+          <div class="section-title">
+            <span>Pastas</span>
+            <button class="icon-button small" id="addFolderButton" aria-label="Criar pasta">
+              <svg><use href="#icon-plus"></use></svg>
+            </button>
+          </div>
+          <div class="folder-list" id="folderList"></div>
+        </section>
+
+        <div class="sidebar-footer">
+          <button class="sidebar-collapse-button" id="sidebarCollapseButton" type="button" aria-label="Compactar barra lateral" aria-pressed="false">
+            <svg><use href="#icon-sidebar"></use></svg>
+          </button>
+        </div>
+      </aside>
+
+      <div class="sidebar-scrim" id="sidebarScrim"></div>
+
+      <main class="workspace">
+        
+        
+        <header class="topbar">
+          <button class="mobile-nav-back mobile-only" id="mobileBackButton" type="button" aria-label="Voltar">
+            <span aria-hidden="true">‹</span>
+            <strong id="mobileBackLabel">Pastas</strong>
+          </button>
+
+          <button class="icon-button mobile-only" id="openSidebarButton" aria-label="Abrir menu">
+            <svg><use href="#icon-menu"></use></svg>
+          </button>
+
+          <div class="topbar-create" id="topbarCreate">
+            <button class="create-menu-button" id="createMenuButton" type="button" aria-label="Criar nota">
+              <svg><use href="#icon-plus"></use></svg>
+              <span class="mobile-create-label">Nova</span>
+              <svg class="create-menu-chevron"><use href="#icon-chevron-down"></use></svg>
+            </button>
+          </div>
+
+          <div class="mac-toolbar" id="topToolbar" aria-label="Barra de ferramentas">
+            <button class="mac-tool" id="themeButton" type="button" data-toolbar-key="theme" aria-label="Alternar tema" title="Tema">
+              <svg id="themeIcon"><use href="#icon-moon"></use></svg>
+            </button>
+            <label class="mac-tool attach-button" id="attachButton" data-toolbar-key="attach" aria-label="Anexar mídia" title="Anexar mídia">
+              <svg><use href="#icon-paperclip"></use></svg>
+              <input id="mediaInput" type="file" accept="image/*,video/*,audio/*,application/pdf" multiple />
+            </label>
+            <button class="mac-tool" id="drawButton" type="button" data-toolbar-key="draw" aria-label="Desenhar ou marcar texto" title="Caneta e marca-texto">
+              <svg><use href="#icon-pen"></use></svg>
+            </button>
+            <button class="mac-tool" id="drawingBlockButton" type="button" data-toolbar-key="drawingBlock" aria-label="Criar bloco de desenho" title="Bloco de desenho">
+              <svg><use href="#icon-square-pen"></use></svg>
+            </button>
+            <input id="checklistImageInput" type="file" accept="image/*" hidden />
+            <button class="mac-tool" id="pinButton" type="button" data-toolbar-key="pin" aria-label="Fixar nota" title="Fixar">
+              <svg><use href="#icon-pin"></use></svg>
+            </button>
+            <button class="mac-tool" id="archiveButton" type="button" data-toolbar-key="archive" aria-label="Arquivar nota" title="Arquivar">
+              <svg><use href="#icon-archive"></use></svg>
+            </button>
+            <button class="mac-tool danger" id="deleteButton" type="button" data-toolbar-key="delete" aria-label="Excluir nota" title="Lixeira">
+              <svg><use href="#icon-trash"></use></svg>
+            </button>
+            <button class="mac-tool" id="restoreButton" type="button" data-toolbar-key="restore" aria-label="Restaurar nota" title="Restaurar">
+              <svg><use href="#icon-restore"></use></svg>
+            </button>
+            <div class="search-box" data-toolbar-key="search" id="toolbarSearchBox">
+              <svg><use href="#icon-search"></use></svg>
+              <input id="searchInput" type="search" placeholder="Buscar" autocomplete="off" />
+            </div>
+            <button class="mac-tool" id="settingsButton" type="button" data-toolbar-key="settings" aria-label="Abrir configurações" title="Configurações">
+              <svg><use href="#icon-settings"></use></svg>
+            </button>
+            <button class="mac-tool account-tool" id="accountButton" type="button" data-toolbar-key="account" aria-label="Entrar ou ver perfil" title="Conta">
+              <span class="account-avatar" id="accountAvatar"><svg><use href="#icon-user"></use></svg></span>
+              <span id="accountLabel">Entrar</span>
+            </button>
+          </div>
+          <button class="mobile-more-button mobile-only" id="mobileMoreButton" type="button" aria-label="Mais opções">
+            <svg><use href="#icon-more"></use></svg>
+          </button>
+          <button class="mobile-edit-button mobile-only" id="mobileEditButton" type="button">
+            <svg><use href="#icon-edit"></use></svg>
+            Editar
+          </button>
+          <button class="mobile-finish-button mobile-only" id="mobileFinishButton" type="button">
+            <svg><use href="#icon-check"></use></svg>
+            Finalizar
+          </button>
+          <button class="ghost-action" id="emptyTrashButton">Esvaziar</button>
+        </header>
+        <div class="mobile-more-menu" id="mobileMoreMenu" hidden>
+          <button type="button" data-mobile-menu="account"><svg><use href="#icon-user"></use></svg>Entrar</button>
+          <button type="button" data-mobile-menu="settings"><svg><use href="#icon-settings"></use></svg>Configurações</button>
+        </div>
+        <div class="toolbar-menu" id="toolbarContextMenu" role="menu" hidden>
+          <button type="button" data-toolbar-menu="remove">Remover item</button>
+          <button type="button" data-toolbar-menu="separator">Adicionar separador</button>
+          <button type="button" data-toolbar-menu="lock">Bloquear barra</button>
+          <button type="button" data-toolbar-menu="reset">Restaurar padrão</button>
+        </div>
+        <div class="mobile-note-action-menu" id="mobileNoteActionMenu" hidden>
+          <button type="button" data-mobile-note-action="pin"><svg><use href="#icon-pin"></use></svg><span>Fixar</span></button>
+          <button type="button" data-mobile-note-action="archive"><svg><use href="#icon-archive"></use></svg><span>Arquivar</span></button>
+          <button type="button" data-mobile-note-action="move"><svg><use href="#icon-folder"></use></svg><span>Mover para pasta</span></button>
+          <button type="button" data-mobile-note-action="edit"><svg><use href="#icon-edit"></use></svg><span>Editar</span></button>
+          <button type="button" data-mobile-note-action="delete"><svg><use href="#icon-trash"></use></svg><span>Apagar</span></button>
+          <button type="button" data-mobile-note-action="restore"><svg><use href="#icon-restore"></use></svg><span>Recuperar</span></button>
+        </div>
+        <div class="mobile-folder-move-menu" id="mobileFolderMoveMenu" hidden></div>
+
+        <section class="content-grid">
+          <section class="notes-panel" aria-label="Lista de notas">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow" id="currentScope">Todas</p>
+                <h2 id="viewTitle">Todas as notas</h2>
+              </div>
+              <p id="viewMeta">0 notas</p>
+              <div class="mobile-search-box">
+                <svg><use href="#icon-search"></use></svg>
+                <input id="mobileSearchInput" type="search" placeholder="Buscar" autocomplete="off" />
+              </div>
+            </div>
+            <div class="notes-list" id="notesList"></div>
+            <div class="empty-state" id="emptyState">
+              <div class="empty-orb">
+                <svg><use href="#icon-note"></use></svg>
+              </div>
+              <h3>Nenhuma nota aqui</h3>
+              <p>Crie alguma nota para começar.</p>
+            </div>
+          </section>
+
+          <section class="editor-panel" aria-label="Editor">
+            <div class="editor-empty" id="editorEmpty">
+              <div class="empty-orb large">
+                <svg><use href="#icon-list"></use></svg>
+              </div>
+              <h2>Escolha uma nota</h2>
+              <p>Suas alterações são salvas automaticamente neste navegador.</p>
+            </div>
+
+            <article class="editor" id="editor" hidden>
+              <div class="editor-toolbar">
+                <div class="segmented-control" role="tablist" aria-label="Tipo da nota">
+                  <button id="noteTypeButton" class="active" type="button">
+                    <svg><use href="#icon-note"></use></svg>
+                    Nota
+                  </button>
+                  <button id="checklistTypeButton" type="button">
+                    <svg><use href="#icon-check"></use></svg>
+                    Checklist
+                  </button>
+                  <button id="shoppingTypeButton" type="button">
+                    <svg><use href="#icon-cart"></use></svg>
+                    Compras
+                  </button>
+                  <button id="goalTypeButton" type="button">
+                    <svg><use href="#icon-dollar"></use></svg>
+                    Metas
+                  </button>
+                </div>
+                <button class="primary-action compact finalize-note-button" id="finalizeNoteButton" type="button">
+                  <svg><use href="#icon-check"></use></svg>
+                  Finalizar
+                </button>
+              </div>
+
+              <input class="title-input" id="titleInput" placeholder="Sem título" />
+
+              <div class="editor-meta">
+                <label>
+                  Pasta
+                  <select id="folderSelect"></select>
+                </label>
+                <span id="updatedLabel"></span>
+              </div>
+
+              <section class="attachments-panel" id="attachmentsPanel" aria-label="Anexos" hidden></section>
+
+              <div class="editor-drawing-layer" id="editorDrawingLayer" hidden>
+                <canvas id="editorDrawingCanvas" aria-label="Camada de desenho da nota"></canvas>
+              </div>
+
+              <div class="note-block-editor" id="noteBlockEditor" hidden></div>
+
+              <textarea
+                class="body-input"
+                id="bodyInput"
+                placeholder="Comece a escrever..."
+              ></textarea>
+
+              <div class="checklist-editor" id="checklistEditor" hidden>
+                <div class="progress-row">
+                  <div class="progress-track">
+                    <span id="progressFill"></span>
+                  </div>
+                  <strong id="progressText">0%</strong>
+                </div>
+                <div class="checklist-items" id="checklistItems"></div>
+                <form class="add-item-form" id="addItemForm">
+                  <input id="newItemInput" type="text" placeholder="Novo item" />
+                  <button class="primary-action compact" type="submit">
+                    <svg><use href="#icon-plus"></use></svg>
+                    Adicionar
+                  </button>
+                </form>
+              </div>
+
+              <div class="shopping-editor" id="shoppingEditor" hidden>
+                <div class="shopping-summary">
+                  <label>
+                    Moeda
+                    <select id="currencySelect">
+                      <option value="BRL">BRL - Real</option>
+                      <option value="USD">USD - Dólar</option>
+                      <option value="EUR">EUR - Euro</option>
+                      <option value="GBP">GBP - Libra</option>
+                      <option value="ARS">ARS - Peso argentino</option>
+                      <option value="CLP">CLP - Peso chileno</option>
+                      <option value="MXN">MXN - Peso mexicano</option>
+                      <option value="JPY">JPY - Iene</option>
+                    </select>
+                  </label>
+                  <div>
+                    <span>Total</span>
+                    <strong id="shoppingTotalText">R$ 0,00</strong>
+                  </div>
+                </div>
+
+                <div class="shopping-header" aria-hidden="true">
+                  <span>Item</span>
+                  <span>Qtd.</span>
+                  <span>Valor</span>
+                </div>
+                <div class="shopping-items" id="shoppingItems"></div>
+                <form class="add-item-form shopping-form" id="addShoppingItemForm">
+                  <input id="newShoppingItemInput" type="text" placeholder="Novo item" />
+                  <input id="newShoppingQtyInput" type="number" min="0" step="0.01" placeholder="Qtd." />
+                  <input id="newShoppingPriceInput" type="number" min="0" step="0.01" placeholder="Valor" />
+                  <button class="primary-action compact" type="submit">
+                    <svg><use href="#icon-plus"></use></svg>
+                    Adicionar
+                  </button>
+                </form>
+              </div>
+
+              <div class="goal-editor" id="goalEditor" hidden>
+                <section class="goal-form" id="goalForm" aria-label="Dados da meta">
+                  <label class="goal-field goal-field-wide">
+                    <span><svg><use href="#icon-dollar"></use></svg>Nome do objetivo</span>
+                    <input id="goalNameInput" type="text" placeholder="Nome do objetivo" />
+                  </label>
+                  <label class="goal-field">
+                    <span><svg><use href="#icon-dollar"></use></svg>Valor do objetivo</span>
+                    <input id="goalTargetInput" type="number" min="0" step="0.01" placeholder="0,00" />
+                  </label>
+                  <label class="goal-field">
+                    <span><svg><use href="#icon-dollar"></use></svg>Dinheiro já guardado</span>
+                    <input id="goalSavedInput" type="number" min="0" step="0.01" placeholder="0,00" />
+                  </label>
+                  <label class="goal-field">
+                    <span>Categoria</span>
+                    <input id="goalCategoryInput" type="text" placeholder="Sem categoria" />
+                  </label>
+                  <div class="goal-field goal-color-field">
+                    <span>Cor do objetivo</span>
+                    <div class="goal-color-options" id="goalColorOptions"></div>
+                  </div>
+                  <label class="goal-field">
+                    <span><svg><use href="#icon-calendar"></use></svg>Data de início</span>
+                    <input id="goalStartDateInput" type="date" />
+                  </label>
+                  <div class="goal-toggle-row">
+                    <label class="toggle-label"><span>Habilitar data para alcançar o objetivo</span><input id="goalHasDeadlineInput" type="checkbox" /></label>
+                    <label class="goal-date-target" id="goalTargetDateWrap">Data final<input id="goalTargetDateInput" type="date" /></label>
+                  </div>
+                </section>
+                <section class="goal-summary-view" id="goalSummary" aria-label="Resumo da meta" hidden></section>
+              </div>
+
+              <section class="drawing-blocks-panel" id="drawingBlocksPanel" aria-label="Blocos de desenho" hidden></section>
+            </article>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div class="draw-tool-popover" id="drawToolPopover" hidden>
+      <div class="draw-tool-card" id="drawToolCard" role="dialog" aria-label="Ferramentas de desenho">
+        <div class="draw-tool-head" id="drawToolHead">
+          <div>
+            <span id="drawToolKicker">Desenho</span>
+            <strong id="drawToolTitle">Caneta e marca-texto</strong>
+          </div>
+          <div class="draw-window-actions">
+            <button class="icon-button small" id="minimizeDrawToolButton" type="button" aria-label="Minimizar ferramentas">
+              <svg><use id="minimizeDrawToolIcon" href="#icon-minus"></use></svg>
+            </button>
+            <button class="icon-button small" id="closeDrawToolButton" type="button" aria-label="Fechar ferramentas">
+              <svg><use href="#icon-x"></use></svg>
+            </button>
+          </div>
+        </div>
+        <div class="draw-tool-body" id="drawToolBody">
+          <div class="draw-mode-row" id="drawModeRow">
+            <button type="button" class="active" data-draw-mode="pen">Rabisco</button>
+            <button type="button" data-draw-mode="highlight">Marca texto</button>
+          </div>
+          <div class="draw-field">
+            <span>Cor</span>
+            <div class="draw-color-options" id="drawColorOptions"></div>
+          </div>
+          <label class="draw-field draw-width-field">
+            <span>Espessura</span>
+            <input id="drawWidthInput" type="range" min="2" max="34" step="1" value="6" />
+            <strong id="drawWidthLabel">6 px</strong>
+          </label>
+          <div class="draw-tool-actions">
+            <div class="draw-history-actions" aria-label="Histórico de desenho">
+              <button class="icon-button small" id="undoDrawingButton" type="button" aria-label="Desfazer traço">
+                <svg><use href="#icon-undo"></use></svg>
+              </button>
+              <button class="icon-button small" id="redoDrawingButton" type="button" aria-label="Refazer traço">
+                <svg><use href="#icon-redo"></use></svg>
+              </button>
+            </div>
+            <button class="secondary-action" id="clearDrawingButton" type="button">Limpar</button>
+            <button class="primary-action compact filled" id="finishDrawingButton" type="button">Concluir</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="create-type-layer" id="createTypeLayer" hidden>
+      <section class="create-type-modal" role="dialog" aria-modal="true" aria-label="Criar novo item">
+        <div class="create-type-header">
+          <div>
+            <span>Criar</span>
+            <h2>Escolha o tipo</h2>
+          </div>
+          <button class="icon-button" type="button" data-create-close aria-label="Fechar">
+            <svg><use href="#icon-x"></use></svg>
+          </button>
+        </div>
+        <div class="create-type-grid">
+          <button type="button" class="create-type-card" data-create-type="note">
+            <span><svg><use href="#icon-note"></use></svg></span>
+            <strong>Nota</strong>
+            <small>Texto livre, imagens e anexos.</small>
+          </button>
+          <button type="button" class="create-type-card" data-create-type="checklist">
+            <span><svg><use href="#icon-check"></use></svg></span>
+            <strong>Checklist</strong>
+            <small>Tarefas com itens marcáveis.</small>
+          </button>
+          <button type="button" class="create-type-card" data-create-type="shopping">
+            <span><svg><use href="#icon-cart"></use></svg></span>
+            <strong>Compras</strong>
+            <small>Lista com quantidade, moeda e total.</small>
+          </button>
+          <button type="button" class="create-type-card" data-create-type="goal">
+            <span><svg><use href="#icon-dollar"></use></svg></span>
+            <strong>Metas</strong>
+            <small>Objetivos financeiros com progresso.</small>
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-layer" id="modalLayer" hidden>
+      <div class="modal-scrim" id="modalScrim"></div>
+
+      
+      
+      <section class="app-modal account-modal" id="accountModal" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle" hidden>
+        <button class="icon-button modal-close" id="closeAccountModal" type="button" aria-label="Fechar conta">
+          <svg><use href="#icon-x"></use></svg>
+        </button>
+        <div class="auth-shell">
+          <aside class="account-visual" aria-hidden="true">
+            <img class="account-brand-mark" id="accountBrandMark" src="assets/white-logo-noti.png" alt="Noti." />
+            <span>by Lopsz</span>
+            <h2>Facilite sua rotina<br />com o Noti.</h2>
+            <p>Organização aprimorada para qualquer ocasião.</p>
+          </aside>
+          <div class="account-content">
+            <div class="account-heading">
+              <h2 id="accountModalTitle">Comece agora</h2>
+              <p id="accountModeHint">Entre na sua conta local para mais recursos.</p>
+            </div>
+            <div class="modal-tabs" role="tablist" aria-label="Conta">
+              <button class="active" id="loginTabButton" type="button">Entrar</button>
+              <button id="signupTabButton" type="button">Criar ID</button>
+            </div>
+            <form class="account-form" id="loginForm">
+              <label>E-mail ou usuário<input id="loginIdentifierInput" type="text" autocomplete="username" placeholder="voc&ecirc;@exemplo.com ou @usuario" required /></label>
+              <label>Senha<input id="loginPasswordInput" type="password" autocomplete="current-password" placeholder="••••••••" required /></label>
+              <label class="terms-line"><input type="checkbox" checked /> Aceito os termos e a privacidade</label>
+              <button class="primary-action filled" type="submit">Entrar</button>
+              <p class="account-switch">Não tem ID? <button type="button" data-account-switch="signup">Criar ID</button></p>
+            </form>
+            <form class="account-form" id="signupForm" hidden>
+              <label class="photo-picker signup-photo-card"><span id="signupPhotoPreview"><svg><use href="#icon-user"></use></svg></span><strong>Foto de perfil</strong><input id="signupPhotoInput" type="file" accept="image/*" hidden /></label>
+              <label>Nome<input id="signupNameInput" type="text" autocomplete="name" placeholder="Seu nome" required /></label>
+              <label>ID<input id="signupUsernameInput" type="text" autocomplete="username" value="@" required /></label>
+              <label>E-mail<input id="signupEmailInput" type="email" autocomplete="email" placeholder="voc&ecirc;@exemplo.com" required /></label>
+              <label class="phone-label">Celular (opcional)
+                <span class="phone-field">
+                  <span class="country-select-wrap">
+                    <select class="country-select" id="signupCountrySelect" aria-label="Pa&iacute;s do telefone"></select>
+                    <svg aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                  </span>
+                  <input id="signupPhoneInput" type="tel" autocomplete="tel" inputmode="tel" placeholder="DDD e n&uacute;mero" />
+                </span>
+              </label>
+              <label>Senha<input id="signupPasswordInput" type="password" autocomplete="new-password" minlength="4" required /></label>
+              <button class="primary-action filled" type="submit">Criar ID</button>
+              <p class="account-switch">Já tem ID? <button type="button" data-account-switch="login">Entrar</button></p>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      
+      <section class="app-modal settings-modal" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle" hidden>
+        <aside class="settings-rail">
+          <button class="settings-back" id="closeSettingsModal" type="button"><span>‹</span> Voltar ao aplicativo</button>
+          <nav class="settings-tabs" aria-label="Configurações">
+            <button class="active" type="button" data-settings-tab="profile"><svg><use href="#icon-user"></use></svg>Perfil</button>
+            <button type="button" data-settings-tab="appearance"><svg><use href="#icon-palette"></use></svg>Aparência</button>
+            <button type="button" data-settings-tab="folders"><svg><use href="#icon-folder"></use></svg>Pastas</button>
+            <button type="button" data-settings-tab="archived"><svg><use href="#icon-archive"></use></svg>Arquivadas</button>
+          </nav>
+          <button class="secondary-action logout-action" id="logoutButton" type="button"><svg><use href="#icon-log-out"></use></svg>Sair</button>
+        </aside>
+        <main class="settings-main">
+          <section class="settings-panel active" data-settings-panel="profile">
+            <div class="settings-section-head">
+              <h2 id="settingsModalTitle">Perfil</h2>
+              <div class="profile-actions"><span class="private-badge">Privado</span><button class="edit-profile-button" id="editProfileButton" type="button"><svg><use href="#icon-edit"></use></svg>Editar</button></div>
+            </div>
+            <div class="profile-dashboard">
+              <span class="profile-avatar-large" id="settingsProfilePhoto"><svg><use href="#icon-user"></use></svg></span>
+              <h3 id="profileDisplayName">Sem conta</h3>
+              <p id="profileDisplayUsername">Entre para ver seu perfil</p>
+              <h4>Resumo do app</h4>
+              <div class="profile-stat-strip" id="profileStatsStrip"></div>
+              <p class="settings-status" id="profileStatus">Entre para editar seu perfil local.</p>
+              <button class="secondary-action" id="profileLoginButton" type="button">Entrar ou criar conta</button>
+            </div>
+          </section>
+          <section class="settings-panel" data-settings-panel="appearance">
+            <div class="settings-page-title"><h2>Aparência</h2><p>Tema, cores e fonte da interface.</p></div>
+            <input id="themeSelect" type="hidden" value="light" />
+            <section class="mac-settings-card theme-card">
+              <div class="setting-row theme-select-row">
+                <strong>Tema</strong>
+                <div class="theme-dropdown" id="themeDropdown">
+                  <button class="theme-dropdown-button" id="themeDropdownButton" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <span class="theme-icon-choice"><svg><use id="themeCurrentIcon" href="#icon-sun"></use></svg></span>
+                    <strong id="themeCurrentLabel">Claro</strong>
+                    <svg class="theme-dropdown-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                  </button>
+                  <div class="theme-preview-group theme-menu theme-inline-group" id="themePreviewGroup" role="listbox">
+                    <button type="button" data-theme-choice="light" role="option"><span class="theme-icon-choice"><svg><use href="#icon-sun"></use></svg></span><small>Claro</small></button>
+                    <button type="button" data-theme-choice="dark" role="option"><span class="theme-icon-choice"><svg><use href="#icon-moon"></use></svg></span><small>Escuro</small></button>
+                    <button type="button" data-theme-choice="coffee" role="option"><span class="theme-icon-choice"><svg><use href="#icon-coffee"></use></svg></span><small>Coffee</small></button>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <section class="mac-settings-card"><div class="setting-row"><strong>Cor de destaque</strong><div class="accent-carousel" id="accentCarousel"></div></div><div class="setting-row"><strong>Cor das pastas</strong><div class="folder-default-colors" id="folderDefaultColors"></div></div></section>
+            <section class="mac-settings-card font-settings-card">
+              <label class="font-import"><span>Fonte da interface</span><strong id="fontNameLabel">SF Pro / sistema</strong><input id="fontImportInput" type="file" accept=".ttf,.otf,.woff,.woff2" hidden /></label>
+              <button class="secondary-action font-reset-button" id="resetFontButton" type="button">Redefinir</button>
+            </section>
+            <section class="mac-settings-card cursor-settings-card">
+              <label class="setting-row cursor-ui-row"><strong>Cursor UI</strong><span class="toggle-label cursor-toggle"><input id="cursorToggleInput" type="checkbox" /></span></label>
+            </section>
+          </section>
+          <section class="settings-panel" data-settings-panel="folders">
+            <div class="settings-page-title"><h2>Pastas</h2><p>Altere a cor geral das pastas ou personalize cada uma.</p></div>
+            <div class="folder-settings-list" id="folderSettingsList"></div>
+          </section>
+          <section class="settings-panel" data-settings-panel="archived">
+            <div class="settings-page-title"><h2>Notas arquivadas</h2><p>Notas arquivadas ficam fora da lista principal.</p></div>
+            <div class="archived-notes-list" id="archivedNotesList"></div>
+          </section>
+        </main>
+      </section>
+      <section class="profile-edit-dialog" id="profileEditDialog" role="dialog" aria-modal="true" aria-label="Editar perfil" hidden>
+        <h2>Editar perfil</h2>
+        <label class="photo-picker edit-photo-picker"><span id="settingsHeaderAvatar"><svg><use href="#icon-user"></use></svg></span><button class="photo-edit-dot" type="button" tabindex="-1"><svg><use href="#icon-edit"></use></svg></button><input id="settingsPhotoInput" type="file" accept="image/*" hidden /></label>
+        <div class="edit-profile-fields">
+          <label>Nome de exibi&ccedil;&atilde;o<input id="settingsNameInput" type="text" /></label>
+          <label>Nome de usu&aacute;rio<input id="settingsUsernameInput" type="text" value="@" /></label>
+          <label>E-mail<input id="settingsEmailInput" type="email" /></label>
+          <label class="phone-label">Telefone
+            <span class="phone-field">
+              <span class="country-select-wrap">
+                <select class="country-select" id="settingsCountrySelect" aria-label="Pa&iacute;s do telefone"></select>
+                <svg aria-hidden="true"><use href="#icon-chevron"></use></svg>
+              </span>
+              <input id="settingsPhoneInput" type="tel" autocomplete="tel" inputmode="tel" />
+            </span>
+          </label>
+        </div>
+        <div class="dialog-actions"><button class="secondary-action" id="cancelProfileEditButton" type="button">Cancelar</button><button class="primary-action filled" id="saveProfileButton" type="button">Salvar</button></div>
+      </section>
+      <section class="folder-edit-dialog" id="folderEditDialog" role="dialog" aria-modal="true" aria-label="Configurar pasta" hidden>
+        <h2>Configurar pasta</h2>
+        <label>Nome da pasta<input id="folderNameInput" type="text" /></label>
+        <div class="folder-dialog-colors" id="folderDialogColors"></div>
+        <div class="dialog-actions split"><button class="secondary-action danger-text" id="deleteFolderButton" type="button">Excluir</button><span></span><button class="secondary-action" id="cancelFolderEditButton" type="button">Cancelar</button><button class="primary-action filled" id="saveFolderButton" type="button">Salvar</button></div>
+      </section>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <template id="noteCardTemplate">
+      <button class="note-card" draggable="true" type="button">
+        <div class="note-copy">
+          <div class="note-card-header">
+            <h3></h3>
+            <span class="note-pin" hidden>
+              <svg><use href="#icon-pin"></use></svg>
+            </span>
+          </div>
+          <p></p>
+          <div class="note-card-footer">
+            <span class="note-date"></span>
+            <span class="note-folder"></span>
+            <span class="note-kind"></span>
+          </div>
+        </div>
+        <span class="note-thumb" hidden></span>
+      </button>
+    </template>
+
+    <script src="default-state.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
