@@ -75,6 +75,9 @@ let draggedNoteId = null;
 let toastTimer = null;
 let activeTextBlockId = null;
 let activeTextSelection = { start: 0, end: 0 };
+let activeRichEditor = null;
+let activeRichRange = null;
+let activeRichSelection = null;
 let checklistImageTargetId = null;
 let shoppingImageTargetId = null;
 let editingFolderId = null;
@@ -129,6 +132,7 @@ const elements = {
   mobileFinishButton: $("#mobileFinishButton"),
   mobileNoteActionMenu: $("#mobileNoteActionMenu"),
   mobileFolderMoveMenu: $("#mobileFolderMoveMenu"),
+  siteContextMenu: $("#siteContextMenu"),
   mobileSearchInput: $("#mobileSearchInput"),
   createMenuButton: $("#createMenuButton"),
   createTypeLayer: $("#createTypeLayer"),
@@ -149,10 +153,15 @@ const elements = {
   emptyState: $("#emptyState"),
   editor: $("#editor"),
   editorEmpty: $("#editorEmpty"),
+  editorToolbar: $(".editor-toolbar"),
   noteTypeButton: $("#noteTypeButton"),
   checklistTypeButton: $("#checklistTypeButton"),
   shoppingTypeButton: $("#shoppingTypeButton"),
   goalTypeButton: $("#goalTypeButton"),
+  segmentedControl: $(".segmented-control"),
+  textFormatToolbar: $("#textFormatToolbar"),
+  formatSizeSelect: $("#formatSizeSelect"),
+  formatColorOptions: $("#formatColorOptions"),
   finalizeNoteButton: $("#finalizeNoteButton"),
   pinButton: $("#pinButton"),
   archiveButton: $("#archiveButton"),
@@ -247,6 +256,7 @@ const elements = {
   settingsPanels: $$(".settings-panel"),
   settingsProfilePhoto: $("#settingsProfilePhoto"),
   settingsPhotoInput: $("#settingsPhotoInput"),
+  settingsPhotoButton: $("#settingsPhotoButton"),
   settingsNameInput: $("#settingsNameInput"),
   settingsUsernameInput: $("#settingsUsernameInput"),
   settingsEmailInput: $("#settingsEmailInput"),
@@ -333,6 +343,11 @@ function bindEvents() {
   elements.saveProfileButton.addEventListener("click", saveProfileSettings);
   elements.settingsUsernameInput.addEventListener("input", () => keepUsernamePrefix(elements.settingsUsernameInput));
   elements.settingsUsernameInput.addEventListener("blur", () => normalizeUsernameInput(elements.settingsUsernameInput));
+  elements.settingsPhotoButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    elements.settingsPhotoInput.click();
+  });
   elements.settingsPhotoInput.addEventListener("change", handleSettingsPhoto);
   elements.themeSelect.addEventListener("change", () => setThemePreference(elements.themeSelect.value));
   elements.themeDropdownButton.addEventListener("click", toggleThemeMenu);
@@ -362,6 +377,13 @@ function bindEvents() {
   elements.cancelFolderEditButton.addEventListener("click", closeFolderDialog);
   elements.deleteFolderButton.addEventListener("click", deleteFolderFromDialog);
   elements.logoutButton.addEventListener("click", logoutUser);
+  elements.textFormatToolbar?.addEventListener("mousedown", handleTextFormatMouseDown);
+  elements.textFormatToolbar?.addEventListener("click", handleTextFormatClick);
+  elements.formatSizeSelect?.addEventListener("pointerdown", () => rememberRichTextEditor(getActiveRichEditor()));
+  elements.formatSizeSelect?.addEventListener("click", () => applyTextFormat("fontSize", elements.formatSizeSelect.value, { silent: true }));
+  elements.formatSizeSelect?.addEventListener("change", () => applyTextFormat("fontSize", elements.formatSizeSelect.value));
+  elements.siteContextMenu?.addEventListener("click", handleSiteContextMenuClick);
+  document.addEventListener("selectionchange", handleRichSelectionChange);
   document.addEventListener("click", (event) => {
     const toolbarAction = event.target.closest("[data-toolbar-menu]");
     if (toolbarAction) {
@@ -372,6 +394,7 @@ function bindEvents() {
     if (!event.target.closest("#mobileMoreMenu, #mobileMoreButton")) closeMobileMoreMenu();
     if (!event.target.closest("#mobileNoteActionMenu")) closeMobileNoteActionMenu();
     if (!event.target.closest("#mobileFolderMoveMenu")) closeMobileFolderMoveMenu();
+    if (!event.target.closest("#siteContextMenu")) closeSiteContextMenu();
 
     if (!event.target.closest("#toolbarContextMenu")) closeToolbarContextMenu();
     if (!event.target.closest("#themeDropdown")) closeThemeMenu();
@@ -379,10 +402,12 @@ function bindEvents() {
     const accountSwitch = event.target.closest("[data-account-switch]");
     if (accountSwitch) setActiveAccountPanel(accountSwitch.dataset.accountSwitch);
   });
+  document.addEventListener("contextmenu", handleAppContextMenu);
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeToolbarContextMenu();
+      closeSiteContextMenu();
       closeThemeMenu();
       closeCreateTypeModal();
       closeDrawingTool();
@@ -550,6 +575,7 @@ function updateMobileLayoutState() {
   document.body.classList.toggle("mobile-note-editing", mobile && mobileScreen === "editor" && Boolean(getSelectedNote() && !getSelectedNote().finalized && !getSelectedNote().trashed));
   document.body.classList.toggle("mobile-note-finalized", mobile && mobileScreen === "editor" && Boolean(getSelectedNote()?.finalized));
   document.body.classList.toggle("mobile-note-trash", mobile && mobileScreen === "editor" && Boolean(getSelectedNote()?.trashed));
+  placeTextFormatToolbar();
 
   if (!mobile) {
     elements.sidebar.style.transform = "";
@@ -741,6 +767,7 @@ function normalizeState(rawState) {
         ? note.items.map((item) => ({
             id: item.id || cryptoId(),
             text: typeof item.text === "string" ? item.text : "",
+            html: typeof item.html === "string" ? sanitizeRichHtml(item.html) : "",
             done: Boolean(item.done),
             image: normalizeInlineImage(item.image),
           }))
@@ -764,6 +791,7 @@ function normalizeState(rawState) {
         ? note.shoppingItems.map((item) => ({
             id: item.id || cryptoId(),
             text: typeof item.text === "string" ? item.text : "",
+            html: typeof item.html === "string" ? sanitizeRichHtml(item.html) : "",
             done: Boolean(item.done),
             quantity: normalizeNumber(item.quantity, 1),
             price: normalizeNumber(item.price, 0),
@@ -886,7 +914,7 @@ function renderNotes() {
 
   let currentGroup = "";
   visibleNotes.forEach((note) => {
-    const group = getDateGroup(note.updatedAt);
+    const group = getDateGroup(note.createdAt);
     if (group !== currentGroup) {
       currentGroup = group;
       const heading = document.createElement("p");
@@ -905,7 +933,12 @@ function renderNotes() {
     card.querySelector("p").textContent = getNotePreview(note);
     if (note.type === "goal") renderGoalNoteCard(card, note);
     card.querySelector(".note-folder").textContent = folder?.name || "Sem pasta";
-    card.querySelector(".note-date").textContent = formatNoteDate(note.updatedAt);
+    card.querySelector(".note-date").textContent = formatNoteDate(note.createdAt);
+    const modified = card.querySelector(".note-modified");
+    if (modified) {
+      modified.textContent = `Editada ${formatNoteDate(note.updatedAt)}`;
+      modified.title = `Criada em ${formatFullDateTime(note.createdAt)} · Editada em ${formatFullDateTime(note.updatedAt)}`;
+    }
     renderNoteThumbnail(card, note);
 
     card.addEventListener("click", () => {
@@ -1015,9 +1048,9 @@ function resetMobileSwipeCard(card) {
   delete card.dataset.swipeAction;
 }
 
-function showMobileNoteActionMenu(noteId, card) {
-  if (!isMobileLayout()) return;
+function showMobileNoteActionMenu(noteId, card, point = null) {
   closeMobileFolderMoveMenu();
+  closeSiteContextMenu();
   mobileNoteMenuTargetId = noteId;
   const note = state.notes.find((candidate) => candidate.id === noteId);
   if (!note) return;
@@ -1028,10 +1061,15 @@ function showMobileNoteActionMenu(noteId, card) {
   elements.mobileNoteActionMenu.querySelector('[data-mobile-note-action="edit"]').hidden = note.trashed;
   elements.mobileNoteActionMenu.querySelector('[data-mobile-note-action="delete"]').hidden = note.trashed;
   elements.mobileNoteActionMenu.querySelector('[data-mobile-note-action="pin"] span').textContent = note.pinned ? "Desafixar" : "Fixar";
-  const rect = card.getBoundingClientRect();
   elements.mobileNoteActionMenu.hidden = false;
-  elements.mobileNoteActionMenu.style.top = `${Math.max(12, rect.top + 8)}px`;
-  elements.mobileNoteActionMenu.style.left = `${Math.max(12, Math.min(window.innerWidth - 244, rect.left + 16))}px`;
+  elements.mobileNoteActionMenu.style.left = "0px";
+  elements.mobileNoteActionMenu.style.top = "0px";
+  const bounds = elements.mobileNoteActionMenu.getBoundingClientRect();
+  const rect = card?.getBoundingClientRect?.();
+  const left = point?.x ?? ((rect?.left || 0) + 16);
+  const top = point?.y ?? ((rect?.top || 0) + 8);
+  elements.mobileNoteActionMenu.style.left = `${Math.max(12, Math.min(window.innerWidth - bounds.width - 12, left))}px`;
+  elements.mobileNoteActionMenu.style.top = `${Math.max(12, Math.min(window.innerHeight - bounds.height - 12, top))}px`;
 }
 
 function closeMobileNoteActionMenu() {
@@ -1105,6 +1143,56 @@ function handleMobileFolderMoveMenuClick(event) {
   moveNoteToFolderById(mobileNoteMenuTargetId, button.dataset.mobileFolderId || "");
   closeMobileFolderMoveMenu();
   closeMobileNoteActionMenu();
+}
+
+function handleAppContextMenu(event) {
+  if (isMobileLayout() || event.defaultPrevented) return;
+  const target = event.target;
+  if (isNativeEditableTarget(target) || target.closest("#toolbarContextMenu, #mobileNoteActionMenu, #siteContextMenu, .app-modal, .profile-edit-dialog, .folder-edit-dialog, .draw-tool-popover")) return;
+
+  const noteCard = target.closest(".note-card");
+  if (noteCard?.dataset.noteId) {
+    event.preventDefault();
+    selectedNoteId = noteCard.dataset.noteId;
+    renderNotes();
+    renderEditor();
+    showMobileNoteActionMenu(noteCard.dataset.noteId, noteCard, { x: event.clientX, y: event.clientY });
+    return;
+  }
+
+  if (target.closest(".notes-panel")) {
+    event.preventDefault();
+    showSiteContextMenu(event.clientX, event.clientY);
+  }
+}
+
+function isNativeEditableTarget(target) {
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
+
+function showSiteContextMenu(x, y) {
+  if (!elements.siteContextMenu) return;
+  closeMobileNoteActionMenu();
+  closeMobileFolderMoveMenu();
+  closeToolbarContextMenu();
+  elements.siteContextMenu.hidden = false;
+  elements.siteContextMenu.style.left = "0px";
+  elements.siteContextMenu.style.top = "0px";
+  const bounds = elements.siteContextMenu.getBoundingClientRect();
+  elements.siteContextMenu.style.left = `${Math.max(10, Math.min(window.innerWidth - bounds.width - 10, x))}px`;
+  elements.siteContextMenu.style.top = `${Math.max(10, Math.min(window.innerHeight - bounds.height - 10, y))}px`;
+}
+
+function closeSiteContextMenu() {
+  if (elements.siteContextMenu) elements.siteContextMenu.hidden = true;
+}
+
+function handleSiteContextMenuClick(event) {
+  const action = event.target.closest("[data-site-context-action]")?.dataset.siteContextAction;
+  if (!action) return;
+  event.stopPropagation();
+  closeSiteContextMenu();
+  if (action === "new-note") createNote("note");
 }
 
 function moveNoteToFolderById(noteId, folderId) {
@@ -1187,10 +1275,16 @@ function renderEditor() {
 
   elements.editor.classList.toggle("finalized", isFinalized);
   elements.editor.classList.toggle("trashed", note.trashed);
+  elements.editor.classList.toggle("type-note", note.type === "note");
+  elements.editor.classList.toggle("type-checklist", note.type === "checklist");
+  elements.editor.classList.toggle("type-shopping", note.type === "shopping");
+  elements.editor.classList.toggle("type-goal", note.type === "goal");
   elements.noteTypeButton.classList.toggle("active", note.type === "note");
   elements.checklistTypeButton.classList.toggle("active", note.type === "checklist");
   elements.shoppingTypeButton.classList.toggle("active", note.type === "shopping");
   elements.goalTypeButton.classList.toggle("active", note.type === "goal");
+  if (elements.segmentedControl) elements.segmentedControl.hidden = true;
+  if (elements.textFormatToolbar) elements.textFormatToolbar.hidden = note.type === "goal" || note.trashed || isFinalized;
   elements.finalizeNoteButton.hidden = note.trashed;
   elements.finalizeNoteButton.disabled = note.trashed;
   elements.finalizeNoteButton.classList.toggle("editing", isFinalized);
@@ -1250,6 +1344,7 @@ function renderEditor() {
   renderShopping(note);
   renderDrawingBlocks(note);
   renderGoal(note);
+  renderTextFormatToolbar(note);
   scheduleEditorCanvasRender();
   queueMobileTopbarHeightUpdate();
 }
@@ -1352,46 +1447,29 @@ function renderNoteTextBlock(note, block) {
     ? `<div class="note-text-block note-text-display" aria-label="Texto da nota"></div>`
     : `
       <button class="block-drag-handle" type="button" draggable="true" aria-label="Mover bloco de texto"><svg><use href="#icon-grip"></use></svg></button>
-      <textarea class="note-text-block" placeholder="Comece a escrever..."></textarea>
+      <div class="note-text-block note-rich-editor" data-rich-editor data-rich-kind="note" data-block-id="${block.id}" contenteditable="true" spellcheck="true" role="textbox" aria-label="Texto da nota" data-placeholder="Comece a escrever..."></div>
     `;
 
   const handle = wrapper.querySelector(".block-drag-handle");
-  const textarea = wrapper.querySelector("textarea");
+  const editor = wrapper.querySelector("[data-rich-editor]");
   const display = wrapper.querySelector(".note-text-display");
 
   if (display) {
-    display.textContent = block.text || "";
+    display.innerHTML = getRichBlockHtml(block);
     elements.noteBlockEditor.append(wrapper);
     return;
   }
 
-  textarea.value = block.text || "";
-  textarea.disabled = note.trashed;
-  textarea.readOnly = note.finalized;
+  editor.innerHTML = getRichBlockHtml(block);
+  editor.contentEditable = String(!note.trashed && !note.finalized);
   handle.hidden = note.trashed;
   handle.draggable = canEditNoteContent(note);
   attachNoteBlockDropHandlers(wrapper, [block.id]);
   attachNoteBlockDragHandle(handle, [block.id]);
 
-  const remember = () => rememberTextCursor(block.id, textarea);
-  textarea.addEventListener("focus", remember);
-  textarea.addEventListener("click", remember);
-  textarea.addEventListener("keyup", remember);
-  textarea.addEventListener("select", remember);
-  textarea.addEventListener("input", () => {
-    block.text = textarea.value;
-    note.content = getTextFromBlocks(note);
-    note.updatedAt = Date.now();
-    saveState();
-    renderSidebar();
-    renderNotes();
-    elements.updatedLabel.textContent = `Editado ${formatRelativeTime(note.updatedAt)}`;
-    rememberTextCursor(block.id, textarea);
-    autoResizeTextarea(textarea);
-  });
+  bindRichTextEditor(editor);
 
   elements.noteBlockEditor.append(wrapper);
-  autoResizeTextarea(textarea);
 }
 function renderNoteImageGrid(note, imageBlocks) {
   const wrapper = document.createElement("section");
@@ -1451,7 +1529,7 @@ function renderChecklist(note) {
       <div class="check-item-main">
         <button class="block-drag-handle item-drag-handle" type="button" draggable="true" aria-label="Mover item"><svg><use href="#icon-grip"></use></svg></button>
         <input type="checkbox" aria-label="Marcar item" />
-        <input type="text" aria-label="Texto do item" />
+        <div class="item-rich-text" data-rich-editor data-rich-kind="checklist" data-item-id="${item.id}" contenteditable="true" spellcheck="true" role="textbox" aria-label="Texto do item" data-placeholder="Item do checklist"></div>
         <button class="icon-button checklist-image-button" type="button" aria-label="Adicionar imagem ao item">
           <svg><use href="#icon-image"></use></svg>
         </button>
@@ -1469,7 +1547,7 @@ function renderChecklist(note) {
 
     const dragHandle = row.querySelector(".item-drag-handle");
     const checkbox = row.querySelector('input[type="checkbox"]');
-    const textInput = row.querySelector('input[type="text"]');
+    const textEditor = row.querySelector("[data-rich-editor]");
     const imageButton = row.querySelector(".checklist-image-button");
     const removeButton = row.querySelector('.check-item-main button[aria-label="Remover item"]');
     const imageWrap = row.querySelector(".check-item-image");
@@ -1478,9 +1556,8 @@ function renderChecklist(note) {
 
     checkbox.checked = item.done;
     checkbox.disabled = note.trashed;
-    textInput.value = item.text;
-    textInput.disabled = note.trashed;
-    textInput.readOnly = note.finalized;
+    textEditor.innerHTML = getRichItemHtml(item);
+    textEditor.contentEditable = String(!note.trashed && !note.finalized);
     imageButton.disabled = note.trashed || note.finalized;
     imageButton.hidden = note.finalized;
     removeButton.disabled = note.trashed || note.finalized;
@@ -1500,9 +1577,7 @@ function renderChecklist(note) {
       updateChecklistItem(item.id, { done: checkbox.checked });
     });
 
-    textInput.addEventListener("input", () => {
-      updateChecklistItem(item.id, { text: textInput.value }, { renderEditor: false });
-    });
+    bindRichTextEditor(textEditor);
 
     imageButton.addEventListener("click", () => openChecklistImagePicker(item.id));
     removeImageButton.addEventListener("click", () => updateChecklistItem(item.id, { image: null }));
@@ -1527,7 +1602,7 @@ function renderShopping(note) {
     row.innerHTML = `
       <button class="block-drag-handle item-drag-handle" type="button" draggable="true" aria-label="Mover compra"><svg><use href="#icon-grip"></use></svg></button>
       <input type="checkbox" aria-label="Marcar compra" />
-      <input class="shopping-name" type="text" aria-label="Item da compra" />
+      <div class="shopping-name item-rich-text" data-rich-editor data-rich-kind="shopping" data-item-id="${item.id}" contenteditable="true" spellcheck="true" role="textbox" aria-label="Item da compra" data-placeholder="Item da compra"></div>
       <input class="shopping-qty" type="number" min="0" step="0.01" aria-label="Quantidade" />
       <input class="shopping-price" type="number" min="0" step="0.01" aria-label="Valor" />
       <button class="icon-button shopping-image-button" type="button" aria-label="Adicionar imagem à compra">
@@ -1546,7 +1621,7 @@ function renderShopping(note) {
 
     const dragHandle = row.querySelector(".item-drag-handle");
     const checkbox = row.querySelector('input[type="checkbox"]');
-    const textInput = row.querySelector(".shopping-name");
+    const textEditor = row.querySelector("[data-rich-editor]");
     const qtyInput = row.querySelector(".shopping-qty");
     const priceInput = row.querySelector(".shopping-price");
     const imageButton = row.querySelector(".shopping-image-button");
@@ -1557,9 +1632,8 @@ function renderShopping(note) {
 
     checkbox.checked = item.done;
     checkbox.disabled = note.trashed;
-    textInput.value = item.text;
-    textInput.disabled = note.trashed;
-    textInput.readOnly = note.finalized;
+    textEditor.innerHTML = getRichItemHtml(item);
+    textEditor.contentEditable = String(!note.trashed && !note.finalized);
     qtyInput.value = formatInputNumber(item.quantity);
     qtyInput.disabled = note.trashed;
     qtyInput.readOnly = note.finalized;
@@ -1585,9 +1659,7 @@ function renderShopping(note) {
       updateShoppingItem(item.id, { done: checkbox.checked });
     });
 
-    textInput.addEventListener("input", () => {
-      updateShoppingItem(item.id, { text: textInput.value }, { renderEditor: false });
-    });
+    bindRichTextEditor(textEditor);
 
     qtyInput.addEventListener("input", () => {
       updateShoppingItem(item.id, { quantity: normalizeNumber(qtyInput.value, 0) }, { renderEditor: false });
@@ -2436,7 +2508,7 @@ function getVisibleNotes() {
 function sortNotes(a, b) {
   if (a.pinned !== b.pinned && currentView !== "trash") return Number(b.pinned) - Number(a.pinned);
   if (a.order !== b.order) return a.order - b.order;
-  return b.updatedAt - a.updatedAt;
+  return b.createdAt - a.createdAt;
 }
 
 function getSelectedNote() {
@@ -2458,9 +2530,9 @@ function createNote(type) {
     type,
     title: getNewNoteTitle(type),
     content: "",
-    blocks: type === "note" ? [{ id: cryptoId(), type: "text", text: "" }] : [],
-    items: type === "checklist" ? [{ id: cryptoId(), text: "Primeiro item", done: false, image: null }] : [],
-    shoppingItems: type === "shopping" ? [{ id: cryptoId(), text: "Primeiro item", done: false, quantity: 1, price: 0, image: null }] : [],
+    blocks: type === "note" ? [{ id: cryptoId(), type: "text", text: "", html: "" }] : [],
+    items: type === "checklist" ? [{ id: cryptoId(), text: "Primeiro item", html: "", done: false, image: null }] : [],
+    shoppingItems: type === "shopping" ? [{ id: cryptoId(), text: "Primeiro item", html: "", done: false, quantity: 1, price: 0, image: null }] : [],
     goal: createGoalDefaults(now),
     currency: "BRL",
     attachments: [],
@@ -2524,11 +2596,11 @@ function updateNoteType(type) {
       note.content = getTextFromBlocks(note);
     }
     if (type === "checklist" && note.items.length === 0) {
-      note.items = [{ id: cryptoId(), text: note.content.trim() || "Novo item", done: false, image: null }];
+      note.items = [{ id: cryptoId(), text: note.content.trim() || "Novo item", html: "", done: false, image: null }];
       note.content = "";
     }
     if (type === "shopping" && note.shoppingItems.length === 0) {
-      note.shoppingItems = [{ id: cryptoId(), text: note.content.trim() || "Novo item", done: false, quantity: 1, price: 0, image: null }];
+      note.shoppingItems = [{ id: cryptoId(), text: note.content.trim() || "Novo item", html: "", done: false, quantity: 1, price: 0, image: null }];
       note.content = "";
       note.currency = note.currency || "BRL";
     }
@@ -2765,7 +2837,7 @@ function addChecklistItem() {
 
   updateSelectedNote((note) => {
     note.type = "checklist";
-    note.items.push({ id: cryptoId(), text, done: false, image: null });
+    note.items.push({ id: cryptoId(), text, html: "", done: false, image: null });
   });
 
   elements.newItemInput.value = "";
@@ -2818,6 +2890,7 @@ function addShoppingItem() {
     note.shoppingItems.push({
       id: cryptoId(),
       text,
+      html: "",
       done: false,
       quantity: normalizeNumber(elements.newShoppingQtyInput.value, 1),
       price: normalizeNumber(elements.newShoppingPriceInput.value, 0),
@@ -3079,7 +3152,7 @@ function closeFolderDialog() {
 function normalizeOrders() {
   state.notes
     .slice()
-    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .sort((a, b) => b.createdAt - a.createdAt)
     .forEach((note, index) => {
       note.order = index;
     });
@@ -3294,18 +3367,24 @@ function normalizeNoteBlocks(note) {
         if (block?.type === "image" && block.attachmentId) {
           return { id: block.id || cryptoId(), type: "image", attachmentId: String(block.attachmentId) };
         }
-        return { id: block?.id || cryptoId(), type: "text", text: typeof block?.text === "string" ? block.text : "" };
+        const html = typeof block?.html === "string" ? sanitizeRichHtml(block.html) : "";
+        return {
+          id: block?.id || cryptoId(),
+          type: "text",
+          text: typeof block?.text === "string" ? block.text : getPlainTextFromHtml(html),
+          html,
+        };
       })
       .filter(Boolean);
   }
 
-  const blocks = [{ id: cryptoId(), type: "text", text: typeof note.content === "string" ? note.content : "" }];
+  const blocks = [{ id: cryptoId(), type: "text", text: typeof note.content === "string" ? note.content : "", html: "" }];
   if (Array.isArray(note.attachments)) {
     note.attachments
       .filter((attachment) => attachment?.id && typeof attachment.type === "string" && attachment.type.startsWith("image/"))
       .forEach((attachment) => blocks.push({ id: cryptoId(), type: "image", attachmentId: String(attachment.id) }));
   }
-  blocks.push({ id: cryptoId(), type: "text", text: "" });
+  blocks.push({ id: cryptoId(), type: "text", text: "", html: "" });
   return blocks;
 }
 
@@ -3324,18 +3403,18 @@ function normalizeInlineImage(image) {
 function ensureNoteTextBlock(note) {
   if (!Array.isArray(note.blocks)) note.blocks = [];
   if (note.blocks.length === 0) {
-    note.blocks.push({ id: cryptoId(), type: "text", text: note.content || "" });
+    note.blocks.push({ id: cryptoId(), type: "text", text: note.content || "", html: "" });
   }
   const last = note.blocks[note.blocks.length - 1];
   if (last?.type === "image") {
-    note.blocks.push({ id: cryptoId(), type: "text", text: "" });
+    note.blocks.push({ id: cryptoId(), type: "text", text: "", html: "" });
   }
 }
 
 function getTextFromBlocks(note) {
   return (note.blocks || [])
     .filter((block) => block.type === "text")
-    .map((block) => block.text || "")
+    .map((block) => block.text || getPlainTextFromHtml(block.html || ""))
     .join("\n")
     .trim();
 }
@@ -3353,6 +3432,403 @@ function autoResizeTextarea(textarea) {
   textarea.style.height = `${Math.max(textarea.scrollHeight, 42)}px`;
 }
 
+function bindRichTextEditor(editor) {
+  if (!editor) return;
+  const remember = () => rememberRichTextEditor(editor);
+  editor.addEventListener("focus", remember);
+  editor.addEventListener("click", remember);
+  editor.addEventListener("keyup", remember);
+  editor.addEventListener("mouseup", remember);
+  editor.addEventListener("input", () => {
+    normalizeEditorMarkup(editor);
+    persistRichEditor(editor);
+    rememberRichTextEditor(editor);
+  });
+  editor.addEventListener("paste", (event) => {
+    event.preventDefault();
+    const text = event.clipboardData?.getData("text/plain") || "";
+    restoreRichSelection(editor);
+    document.execCommand("insertText", false, text);
+    normalizeEditorMarkup(editor);
+    persistRichEditor(editor);
+    rememberRichTextEditor(editor);
+  });
+}
+
+function rememberRichTextEditor(editor) {
+  if (!editor) return;
+  activeRichEditor = editor;
+  activeTextBlockId = editor.dataset.blockId || "";
+  activeTextSelection = null;
+  const selection = window.getSelection?.();
+  if (selection?.rangeCount && editor.contains(selection.anchorNode)) {
+    activeRichRange = selection.getRangeAt(0).cloneRange();
+    activeRichSelection = captureRichSelection(editor, activeRichRange);
+  }
+}
+
+function handleRichSelectionChange() {
+  const selection = window.getSelection?.();
+  if (!selection?.rangeCount) return;
+  const node = selection.anchorNode;
+  const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+  const editor = element?.closest?.("[data-rich-editor]");
+  if (!editor || !editor.isContentEditable) return;
+  rememberRichTextEditor(editor);
+}
+
+function getActiveRichEditor() {
+  if (activeRichEditor && document.contains(activeRichEditor) && activeRichEditor.isContentEditable) return activeRichEditor;
+  const selection = window.getSelection?.();
+  const node = selection?.anchorNode;
+  const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+  return element?.closest?.("[data-rich-editor]") || null;
+}
+
+function restoreRichSelection(editor = getActiveRichEditor()) {
+  if (!editor) return false;
+  editor.focus({ preventScroll: true });
+  const selection = window.getSelection?.();
+  if (!selection) return true;
+
+  if (activeRichSelection && isSameRichEditor(editor, activeRichSelection)) {
+    const restoredRange = createRangeFromTextOffsets(editor, activeRichSelection.start, activeRichSelection.end);
+    if (restoredRange) {
+      selection.removeAllRanges();
+      selection.addRange(restoredRange);
+      activeRichRange = restoredRange.cloneRange();
+      return true;
+    }
+  }
+
+  if (!activeRichRange || !isRangeInsideEditor(editor, activeRichRange)) return true;
+  selection.removeAllRanges();
+  selection.addRange(activeRichRange);
+  return true;
+}
+
+function captureRichSelection(editor, range) {
+  if (!editor || !range || !isRangeInsideEditor(editor, range)) return null;
+  const preStart = range.cloneRange();
+  preStart.selectNodeContents(editor);
+  preStart.setEnd(range.startContainer, range.startOffset);
+
+  const preEnd = range.cloneRange();
+  preEnd.selectNodeContents(editor);
+  preEnd.setEnd(range.endContainer, range.endOffset);
+
+  return {
+    ...getRichEditorIdentity(editor),
+    start: preStart.toString().length,
+    end: preEnd.toString().length,
+  };
+}
+
+function getRichEditorIdentity(editor) {
+  return {
+    kind: editor?.dataset.richKind || "",
+    blockId: editor?.dataset.blockId || "",
+    itemId: editor?.dataset.itemId || "",
+  };
+}
+
+function isSameRichEditor(editor, snapshot) {
+  const identity = getRichEditorIdentity(editor);
+  return Boolean(snapshot && identity.kind === snapshot.kind && identity.blockId === snapshot.blockId && identity.itemId === snapshot.itemId);
+}
+
+function isRangeInsideEditor(editor, range) {
+  return Boolean(editor && range && editor.contains(range.commonAncestorContainer));
+}
+
+function createRangeFromTextOffsets(editor, start, end) {
+  if (!editor) return null;
+  const textLength = editor.innerText.length;
+  const safeStart = Math.max(0, Math.min(Number(start) || 0, textLength));
+  const safeEnd = Math.max(safeStart, Math.min(Number(end) || safeStart, textLength));
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  let current = 0;
+  let startSet = false;
+  let lastTextNode = null;
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    lastTextNode = node;
+    const next = current + node.nodeValue.length;
+    if (!startSet && safeStart <= next) {
+      range.setStart(node, Math.max(0, safeStart - current));
+      startSet = true;
+    }
+    if (startSet && safeEnd <= next) {
+      range.setEnd(node, Math.max(0, safeEnd - current));
+      return range;
+    }
+    current = next;
+  }
+
+  if (lastTextNode) {
+    const length = lastTextNode.nodeValue.length;
+    if (!startSet) range.setStart(lastTextNode, length);
+    range.setEnd(lastTextNode, length);
+    return range;
+  }
+
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  return range;
+}
+
+function applyInlineStyleToSelection(editor, styles = {}) {
+  const selection = window.getSelection?.();
+  if (!selection?.rangeCount) return false;
+  const range = selection.getRangeAt(0);
+  if (range.collapsed || !isRangeInsideEditor(editor, range)) return false;
+
+  const fragment = range.extractContents();
+  stripConflictingInlineStyles(fragment, styles);
+  const span = document.createElement("span");
+  if (styles.fontSize) span.style.fontSize = styles.fontSize;
+  if (styles.color) span.style.color = styles.color;
+  span.append(fragment);
+  range.insertNode(span);
+
+  const nextRange = document.createRange();
+  nextRange.selectNodeContents(span);
+  selection.removeAllRanges();
+  selection.addRange(nextRange);
+  activeRichRange = nextRange.cloneRange();
+  activeRichSelection = captureRichSelection(editor, nextRange);
+  return true;
+}
+
+function stripConflictingInlineStyles(root, styles = {}) {
+  const spans = root.querySelectorAll ? Array.from(root.querySelectorAll("span")) : [];
+  spans.forEach((span) => {
+    if (styles.fontSize) span.style.fontSize = "";
+    if (styles.color) span.style.color = "";
+    if (!span.getAttribute("style")) unwrapElement(span);
+  });
+}
+
+function unwrapElement(element) {
+  const fragment = document.createDocumentFragment();
+  while (element.firstChild) fragment.append(element.firstChild);
+  element.replaceWith(fragment);
+}
+
+function handleTextFormatMouseDown(event) {
+  if (event.target.closest("button, .color-swatch")) {
+    event.preventDefault();
+  }
+}
+
+function handleTextFormatClick(event) {
+  const commandButton = event.target.closest("[data-format-command]");
+  if (commandButton) {
+    applyTextFormat(commandButton.dataset.formatCommand);
+    return;
+  }
+
+  const colorButton = event.target.closest("[data-color]");
+  if (colorButton) {
+    applyTextFormat("foreColor", colorButton.dataset.color);
+  }
+}
+
+function applyTextFormat(command, value = "", options = {}) {
+  const editor = getActiveRichEditor();
+  const note = getSelectedNote();
+  if (!editor || !canEditNoteContent(note) || note.type === "goal") {
+    if (!options.silent) showToast("Selecione um texto editável");
+    return;
+  }
+
+  restoreRichSelection(editor);
+  if (command === "fontSize") {
+    if (!applyInlineStyleToSelection(editor, { fontSize: normalizeTextSize(value) + "px" }) && !options.silent) {
+      showToast("Selecione o texto para alterar o tamanho");
+      return;
+    }
+  } else if (command === "foreColor") {
+    if (!applyInlineStyleToSelection(editor, { color: normalizeAccent(value) }) && !options.silent) {
+      showToast("Selecione o texto para alterar a cor");
+      return;
+    }
+  } else {
+    document.execCommand(command, false, null);
+  }
+
+  normalizeEditorMarkup(editor);
+  persistRichEditor(editor);
+  rememberRichTextEditor(editor);
+}
+
+function renderTextFormatToolbar(note = getSelectedNote()) {
+  if (!elements.textFormatToolbar || !elements.formatColorOptions) return;
+  placeTextFormatToolbar();
+  const enabled = Boolean(note && !note.trashed && !note.finalized && note.type !== "goal");
+  elements.textFormatToolbar.hidden = !enabled;
+  if (!enabled) return;
+  renderColorButtons(elements.formatColorOptions, ACCENT_COLORS, preferences.accent, (color) => applyTextFormat("foreColor", color));
+}
+
+function placeTextFormatToolbar() {
+  if (!elements.textFormatToolbar) return;
+  if (isMobileLayout()) {
+    if (elements.textFormatToolbar.parentElement !== document.body) {
+      document.body.append(elements.textFormatToolbar);
+    }
+    return;
+  }
+
+  if (elements.editorToolbar && elements.textFormatToolbar.parentElement !== elements.editorToolbar) {
+    elements.editorToolbar.insertBefore(elements.textFormatToolbar, elements.finalizeNoteButton);
+  }
+}
+
+function persistRichEditor(editor) {
+  const note = getSelectedNote();
+  if (!canEditNoteContent(note)) return;
+  const html = sanitizeRichHtml(editor.innerHTML);
+  const text = getPlainTextFromHtml(html);
+  const kind = editor.dataset.richKind;
+
+  if (kind === "note") {
+    const block = (note.blocks || []).find((candidate) => candidate.id === editor.dataset.blockId);
+    if (!block) return;
+    block.html = html;
+    block.text = text;
+    note.content = getTextFromBlocks(note);
+  }
+
+  if (kind === "checklist") {
+    const item = note.items.find((candidate) => candidate.id === editor.dataset.itemId);
+    if (!item) return;
+    item.html = html;
+    item.text = text;
+  }
+
+  if (kind === "shopping") {
+    const item = note.shoppingItems.find((candidate) => candidate.id === editor.dataset.itemId);
+    if (!item) return;
+    item.html = html;
+    item.text = text;
+  }
+
+  note.updatedAt = Date.now();
+  saveState();
+  renderSidebar();
+  renderNotes();
+  if (elements.updatedLabel) elements.updatedLabel.textContent = `Editado ${formatRelativeTime(note.updatedAt)}`;
+}
+
+function normalizeEditorMarkup(editor) {
+  if (!editor) return;
+  convertLegacyFontTags(editor);
+  const clean = sanitizeRichHtml(editor.innerHTML);
+  if (editor.innerHTML !== clean) editor.innerHTML = clean;
+}
+
+function convertLegacyFontTags(root, forcedStyle = {}) {
+  root.querySelectorAll("font").forEach((font) => {
+    const span = document.createElement("span");
+    const color = normalizeCssColor(forcedStyle.color || font.getAttribute("color") || font.style.color);
+    const fontSize = forcedStyle.fontSize || legacyFontSizeToCss(font.getAttribute("size")) || normalizeCssFontSize(font.style.fontSize);
+    if (color) span.style.color = color;
+    if (fontSize) span.style.fontSize = fontSize;
+    while (font.firstChild) span.append(font.firstChild);
+    font.replaceWith(span);
+  });
+}
+
+function getRichBlockHtml(block) {
+  const html = sanitizeRichHtml(block?.html || "");
+  if (html) return html;
+  return plainTextToHtml(block?.text || "");
+}
+
+function getRichItemHtml(item) {
+  const html = sanitizeRichHtml(item?.html || "");
+  if (html) return html;
+  return plainTextToHtml(item?.text || "");
+}
+
+function sanitizeRichHtml(html = "") {
+  const container = document.createElement("div");
+  container.innerHTML = String(html || "");
+  container.querySelectorAll("script, style, iframe, object, embed, link, meta").forEach((node) => node.remove());
+  container.querySelectorAll("font").forEach((font) => {
+    const span = document.createElement("span");
+    const color = normalizeCssColor(font.getAttribute("color") || font.style.color);
+    const fontSize = legacyFontSizeToCss(font.getAttribute("size")) || normalizeCssFontSize(font.style.fontSize);
+    if (color) span.style.color = color;
+    if (fontSize) span.style.fontSize = fontSize;
+    while (font.firstChild) span.append(font.firstChild);
+    font.replaceWith(span);
+  });
+
+  const allowed = new Set(["B", "STRONG", "I", "EM", "U", "SPAN", "BR", "DIV", "P"]);
+  Array.from(container.querySelectorAll("*")).forEach((element) => {
+    if (!allowed.has(element.tagName)) {
+      const fragment = document.createDocumentFragment();
+      while (element.firstChild) fragment.append(element.firstChild);
+      element.replaceWith(fragment);
+      return;
+    }
+
+    const color = normalizeCssColor(element.style.color);
+    const fontSize = normalizeCssFontSize(element.style.fontSize);
+    Array.from(element.attributes).forEach((attribute) => element.removeAttribute(attribute.name));
+    if (element.tagName === "SPAN") {
+      if (color) element.style.color = color;
+      if (fontSize) element.style.fontSize = fontSize;
+    }
+  });
+  container.querySelectorAll("span").forEach((span) => {
+    if (!span.textContent && !span.querySelector("br")) span.remove();
+  });
+
+  return container.innerHTML
+    .replace(/<div><br><\/div>/gi, "<br>")
+    .replace(/^(<br\s*\/?>)+|(<br\s*\/?>)+$/gi, "")
+    .trim();
+}
+
+function plainTextToHtml(text = "") {
+  return escapeHtml(text).replace(/\n/g, "<br>");
+}
+
+function getPlainTextFromHtml(html = "") {
+  const container = document.createElement("div");
+  container.innerHTML = sanitizeRichHtml(html);
+  return (container.innerText || container.textContent || "").replace(/\u00a0/g, " ").trim();
+}
+
+function normalizeTextSize(value) {
+  return Math.max(12, Math.min(40, Number.parseInt(value, 10) || 16));
+}
+
+function normalizeCssFontSize(value = "") {
+  if (!value) return "";
+  const pixels = Number.parseFloat(String(value));
+  if (!Number.isFinite(pixels)) return "";
+  return normalizeTextSize(pixels) + "px";
+}
+
+function legacyFontSizeToCss(size = "") {
+  const map = { 1: 12, 2: 14, 3: 16, 4: 18, 5: 22, 6: 28, 7: 34 };
+  return map[size] ? map[size] + "px" : "";
+}
+
+function normalizeCssColor(value = "") {
+  const color = String(value || "").trim();
+  if (!color) return "";
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) return color;
+  if (/^rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+(?:\s*,\s*(0|1|0?\.\d+))?\s*\)$/i.test(color)) return color;
+  return "";
+}
+
 function getAttachment(note, attachmentId) {
   return note.attachments.find((attachment) => attachment.id === attachmentId);
 }
@@ -3368,23 +3844,28 @@ function insertImageAttachmentsIntoNote(note, imageAttachments) {
 
   const target = note.blocks[insertIndex];
   const imageBlocks = imageAttachments.map((attachment) => ({ id: cryptoId(), type: "image", attachmentId: attachment.id }));
-  const afterTextBlock = { id: cryptoId(), type: "text", text: "" };
+  const afterTextBlock = { id: cryptoId(), type: "text", text: "", html: "" };
 
   if (target?.type === "text") {
     const text = target.text || "";
-    const start = Math.max(0, Math.min(activeTextSelection.start ?? text.length, text.length));
-    const end = Math.max(start, Math.min(activeTextSelection.end ?? start, text.length));
-    const before = text.slice(0, start);
-    const after = text.slice(end);
-    target.text = before;
-    afterTextBlock.text = after;
-    note.blocks.splice(insertIndex + 1, 0, ...imageBlocks, afterTextBlock);
+    if (target.html || !activeTextSelection) {
+      note.blocks.splice(insertIndex + 1, 0, ...imageBlocks, afterTextBlock);
+    } else {
+      const start = Math.max(0, Math.min(activeTextSelection.start ?? text.length, text.length));
+      const end = Math.max(start, Math.min(activeTextSelection.end ?? start, text.length));
+      const before = text.slice(0, start);
+      const after = text.slice(end);
+      target.text = before;
+      target.html = "";
+      afterTextBlock.text = after;
+      note.blocks.splice(insertIndex + 1, 0, ...imageBlocks, afterTextBlock);
+    }
   } else {
     note.blocks.splice(insertIndex + 1, 0, ...imageBlocks, afterTextBlock);
   }
 
   activeTextBlockId = afterTextBlock.id;
-  activeTextSelection = { start: 0, end: 0 };
+  activeTextSelection = null;
   note.content = getTextFromBlocks(note);
 }
 
@@ -4583,6 +5064,16 @@ function formatNoteDate(timestamp) {
     month: "2-digit",
     year: sameYear ? undefined : "2-digit",
   }).format(date);
+}
+
+function formatFullDateTime(timestamp) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
 }
 
 function formatFileSize(size) {

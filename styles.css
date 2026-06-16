@@ -208,6 +208,346 @@
   }
 }
 
+/* Override final: barra de formatacao mobile sempre acessivel no modo de edicao */
+@media (max-width: 680px) {
+  html body.mobile-layout.mobile-screen-editor.mobile-note-editing .text-format-toolbar:not([hidden]) {
+    position: fixed !important;
+    left: 12px !important;
+    right: 12px !important;
+    bottom: max(12px, env(safe-area-inset-bottom)) !important;
+    z-index: 220 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+    max-width: none !important;
+    overflow-x: auto !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 22px !important;
+    padding: 8px !important;
+    background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
+    box-shadow: 0 18px 44px color-mix(in srgb, #000 18%, transparent) !important;
+    backdrop-filter: blur(22px) !important;
+    -webkit-backdrop-filter: blur(22px) !important;
+  }
+
+  html body.mobile-layout.mobile-screen-editor.mobile-note-editing .editor {
+    padding-bottom: max(142px, env(safe-area-inset-bottom)) !important;
+  }
+
+  html body.mobile-layout.mobile-screen-editor.mobile-note-editing .format-color-options {
+    flex: 0 0 auto !important;
+    max-width: 142px !important;
+    overflow-x: auto !important;
+  }
+}
+
+/* Ajustes finais: desktop, menu de contexto e texto formatado */
+.mobile-create-label {
+  display: none;
+}
+
+.site-context-menu,
+.mobile-note-action-menu {
+  position: fixed;
+  z-index: 120;
+  display: grid;
+  min-width: 206px;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 7px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  color: var(--text);
+  box-shadow: 0 24px 70px color-mix(in srgb, #000 24%, transparent);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+.site-context-menu[hidden],
+.mobile-note-action-menu[hidden] {
+  display: none !important;
+}
+
+.site-context-menu button,
+.mobile-note-action-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0 11px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.site-context-menu button:hover,
+.mobile-note-action-menu button:hover {
+  background: var(--surface-hover);
+}
+
+.site-context-menu svg,
+.mobile-note-action-menu svg {
+  width: 17px;
+  height: 17px;
+  color: var(--accent);
+}
+
+.mobile-note-action-menu [data-mobile-note-action="delete"] {
+  color: var(--danger);
+}
+
+.mobile-note-action-menu [data-mobile-note-action="delete"] svg {
+  color: var(--danger);
+}
+
+.text-format-toolbar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+}
+
+.text-format-toolbar[hidden] {
+  display: none !important;
+}
+
+.format-button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+}
+
+.format-button:hover {
+  background: var(--surface-hover);
+}
+
+.format-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.format-size-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 0 8px 0 10px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.format-size-field select {
+  width: 54px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.format-color-options {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 4px;
+}
+
+.format-color-options .color-swatch {
+  width: 22px;
+  height: 22px;
+}
+
+.note-rich-editor,
+.item-rich-text,
+.note-text-display {
+  outline: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.note-rich-editor:empty::before,
+.item-rich-text:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-soft);
+}
+
+.note-rich-editor {
+  min-height: 42px;
+}
+
+.item-rich-text {
+  min-width: 0;
+  min-height: 34px;
+  border-radius: 12px;
+  padding: 7px 8px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.item-rich-text:focus {
+  background: var(--surface-hover);
+}
+
+.check-item-main {
+  align-items: start;
+}
+
+.check-item.done .item-rich-text {
+  color: var(--text-soft);
+  text-decoration: line-through;
+}
+
+.shopping-item .shopping-name {
+  min-width: 0;
+}
+
+.editor.finalized .item-rich-text,
+.editor.finalized .note-rich-editor {
+  cursor: default;
+}
+
+.note-modified {
+  color: var(--text-soft);
+}
+
+.note-date::before {
+  content: "Criada ";
+}
+
+@media (min-width: 681px) {
+  .editor-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .text-format-toolbar {
+    max-width: min(100%, 720px);
+  }
+}
+
+@media (max-width: 680px) {
+  body.mobile-screen-list {
+    overflow-y: auto !important;
+  }
+
+  body.mobile-screen-list .app-shell,
+  body.mobile-screen-list .workspace {
+    height: auto !important;
+    min-height: 100svh !important;
+    overflow: visible !important;
+  }
+
+  body.mobile-screen-list .content-grid,
+  body.mobile-screen-list .notes-panel {
+    height: auto !important;
+    max-height: none !important;
+    min-height: calc(100svh - var(--mobile-topbar-height, 58px)) !important;
+    overflow: visible !important;
+  }
+
+  body.mobile-screen-list .notes-panel {
+    display: block !important;
+  }
+
+  body.mobile-screen-list .notes-list {
+    overflow: visible !important;
+    padding-bottom: max(42px, env(safe-area-inset-bottom)) !important;
+  }
+
+  body.mobile-screen-list .note-card {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  body.mobile-screen-list .note-copy {
+    min-width: 0 !important;
+  }
+
+  body.mobile-layout .mobile-create-label {
+    display: inline !important;
+  }
+
+  body.mobile-screen-editor .text-format-toolbar {
+    position: fixed !important;
+    left: 12px !important;
+    right: 12px !important;
+    bottom: max(12px, env(safe-area-inset-bottom)) !important;
+    z-index: 80 !important;
+    justify-content: center !important;
+    overflow-x: auto !important;
+    border-radius: 22px !important;
+    padding: 8px !important;
+    background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
+  }
+
+  body.mobile-screen-editor .text-format-toolbar .format-size-field span {
+    display: none !important;
+  }
+
+  body.mobile-screen-editor .format-color-options {
+    max-width: 148px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  body.mobile-screen-editor .format-color-options::-webkit-scrollbar {
+    display: none;
+  }
+
+  body.mobile-screen-editor .editor {
+    padding-bottom: max(132px, env(safe-area-inset-bottom)) !important;
+  }
+
+  html body.mobile-layout.mobile-screen-list {
+    overflow-y: auto !important;
+  }
+
+  html body.mobile-layout.mobile-screen-list .app-shell,
+  html body.mobile-layout.mobile-screen-list .workspace {
+    height: auto !important;
+    min-height: 100svh !important;
+    overflow: visible !important;
+  }
+
+  html body.mobile-layout.mobile-screen-list .content-grid,
+  html body.mobile-layout.mobile-screen-list .notes-panel {
+    height: auto !important;
+    max-height: none !important;
+    min-height: calc(100svh - var(--mobile-topbar-height, 58px)) !important;
+    overflow: visible !important;
+  }
+
+  html body.mobile-layout.mobile-screen-list .notes-list {
+    overflow: visible !important;
+    padding-bottom: max(42px, env(safe-area-inset-bottom)) !important;
+  }
+
+  html body.mobile-layout.mobile-screen-editor .editor {
+    padding-bottom: max(132px, env(safe-area-inset-bottom)) !important;
+  }
+}
+
 /* Ajustes mobile finais: lixeira e rolagem real da topbar */
 @media (max-width: 680px) {
   body.mobile-view-trash .create-menu-button {

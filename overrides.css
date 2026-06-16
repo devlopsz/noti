@@ -1,0 +1,38 @@
+/* Overrides carregados por ultimo para corrigir conflitos de responsividade. */
+
+@media (max-width: 680px) {
+  html body.mobile-layout.mobile-screen-editor.mobile-note-editing .text-format-toolbar:not([hidden]) {
+    position: fixed !important;
+    left: 12px !important;
+    right: 12px !important;
+    bottom: max(12px, env(safe-area-inset-bottom)) !important;
+    z-index: 220 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+    max-width: none !important;
+    overflow-x: auto !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 22px !important;
+    padding: 8px !important;
+    background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
+    box-shadow: 0 18px 44px color-mix(in srgb, #000 18%, transparent) !important;
+    backdrop-filter: blur(22px) !important;
+    -webkit-backdrop-filter: blur(22px) !important;
+  }
+
+  html body.mobile-layout.mobile-screen-editor.mobile-note-editing .editor {
+    padding-bottom: max(142px, env(safe-area-inset-bottom)) !important;
+  }
+
+  html body.mobile-layout.mobile-screen-editor.mobile-note-editing .format-color-options {
+    flex: 0 0 auto !important;
+    max-width: 142px !important;
+    overflow-x: auto !important;
+  }
+
+  html body.mobile-layout.mobile-screen-editor.mobile-note-editing .format-size-field span {
+    display: none !important;
+  }
+}

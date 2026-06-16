@@ -10,6 +10,7 @@
     <title>Noti.</title>
     <link id="favicon" rel="icon" type="image/x-icon" href="assets/white-icon-noti.ico" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="overrides.css" />
   </head>
   <body>
     <svg aria-hidden="true" class="icon-sprite">
@@ -22,6 +23,17 @@
       <symbol id="icon-undo" viewBox="0 0 24 24">
         <path d="M9 7H4v5" />
         <path d="M4 12a7 7 0 1 0 2.1-5" />
+      </symbol>
+      <symbol id="icon-bold" viewBox="0 0 24 24">
+        <path d="M8 4h6a4 4 0 0 1 0 8H8z" />
+        <path d="M8 12h7a4 4 0 0 1 0 8H8z" />
+      </symbol>
+      <symbol id="icon-italic" viewBox="0 0 24 24">
+        <path d="M11 4h8M5 20h8M14 4 10 20" />
+      </symbol>
+      <symbol id="icon-underline" viewBox="0 0 24 24">
+        <path d="M7 4v6a5 5 0 0 0 10 0V4" />
+        <path d="M5 21h14" />
       </symbol>
       <symbol id="icon-redo" viewBox="0 0 24 24">
         <path d="M15 7h5v5" />
@@ -305,6 +317,9 @@
           <button type="button" data-mobile-note-action="restore"><svg><use href="#icon-restore"></use></svg><span>Recuperar</span></button>
         </div>
         <div class="mobile-folder-move-menu" id="mobileFolderMoveMenu" hidden></div>
+        <div class="site-context-menu" id="siteContextMenu" hidden>
+          <button type="button" data-site-context-action="new-note"><svg><use href="#icon-note"></use></svg><span>Nova nota</span></button>
+        </div>
 
         <section class="content-grid">
           <section class="notes-panel" aria-label="Lista de notas">
@@ -357,6 +372,29 @@
                     <svg><use href="#icon-dollar"></use></svg>
                     Metas
                   </button>
+                </div>
+                <div class="text-format-toolbar" id="textFormatToolbar" aria-label="Formatação de texto" hidden>
+                  <button class="format-button" type="button" data-format-command="bold" aria-label="Negrito" title="Negrito">
+                    <svg><use href="#icon-bold"></use></svg>
+                  </button>
+                  <button class="format-button" type="button" data-format-command="italic" aria-label="Itálico" title="Itálico">
+                    <svg><use href="#icon-italic"></use></svg>
+                  </button>
+                  <button class="format-button" type="button" data-format-command="underline" aria-label="Sublinhado" title="Sublinhado">
+                    <svg><use href="#icon-underline"></use></svg>
+                  </button>
+                  <label class="format-size-field" aria-label="Tamanho do texto">
+                    <span>Tamanho</span>
+                    <select id="formatSizeSelect">
+                      <option value="14">14</option>
+                      <option value="16" selected>16</option>
+                      <option value="18">18</option>
+                      <option value="22">22</option>
+                      <option value="28">28</option>
+                      <option value="34">34</option>
+                    </select>
+                  </label>
+                  <div class="format-color-options" id="formatColorOptions" aria-label="Cor do texto"></div>
                 </div>
                 <button class="primary-action compact finalize-note-button" id="finalizeNoteButton" type="button">
                   <svg><use href="#icon-check"></use></svg>
@@ -689,7 +727,7 @@
       </section>
       <section class="profile-edit-dialog" id="profileEditDialog" role="dialog" aria-modal="true" aria-label="Editar perfil" hidden>
         <h2>Editar perfil</h2>
-        <label class="photo-picker edit-photo-picker"><span id="settingsHeaderAvatar"><svg><use href="#icon-user"></use></svg></span><button class="photo-edit-dot" type="button" tabindex="-1"><svg><use href="#icon-edit"></use></svg></button><input id="settingsPhotoInput" type="file" accept="image/*" hidden /></label>
+        <label class="photo-picker edit-photo-picker"><span id="settingsHeaderAvatar"><svg><use href="#icon-user"></use></svg></span><button class="photo-edit-dot" id="settingsPhotoButton" type="button" aria-label="Trocar foto"><svg><use href="#icon-edit"></use></svg></button><input id="settingsPhotoInput" type="file" accept="image/*" hidden /></label>
         <div class="edit-profile-fields">
           <label>Nome de exibi&ccedil;&atilde;o<input id="settingsNameInput" type="text" /></label>
           <label>Nome de usu&aacute;rio<input id="settingsUsernameInput" type="text" value="@" /></label>
@@ -727,6 +765,7 @@
           <p></p>
           <div class="note-card-footer">
             <span class="note-date"></span>
+            <span class="note-modified"></span>
             <span class="note-folder"></span>
             <span class="note-kind"></span>
           </div>
