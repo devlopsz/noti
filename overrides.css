@@ -1,29 +1,24 @@
 /* Overrides carregados por ultimo para corrigir conflitos de responsividade. */
 
+.shopping-price-wrap {
+  display: contents;
+}
+
+.shopping-currency-symbol {
+  display: none;
+}
+
 @media (max-width: 680px) {
+  html body.mobile-layout .text-format-toolbar {
+    display: none !important;
+  }
+
   html body.mobile-layout.mobile-screen-editor.mobile-note-editing .text-format-toolbar:not([hidden]) {
-    position: fixed !important;
-    left: 12px !important;
-    right: 12px !important;
-    bottom: max(12px, env(safe-area-inset-bottom)) !important;
-    z-index: 220 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 8px !important;
-    max-width: none !important;
-    overflow-x: auto !important;
-    border: 1px solid var(--line) !important;
-    border-radius: 22px !important;
-    padding: 8px !important;
-    background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
-    box-shadow: 0 18px 44px color-mix(in srgb, #000 18%, transparent) !important;
-    backdrop-filter: blur(22px) !important;
-    -webkit-backdrop-filter: blur(22px) !important;
+    display: none !important;
   }
 
   html body.mobile-layout.mobile-screen-editor.mobile-note-editing .editor {
-    padding-bottom: max(142px, env(safe-area-inset-bottom)) !important;
+    padding-bottom: max(74px, env(safe-area-inset-bottom)) !important;
   }
 
   html body.mobile-layout.mobile-screen-editor.mobile-note-editing .format-color-options {
@@ -34,5 +29,436 @@
 
   html body.mobile-layout.mobile-screen-editor.mobile-note-editing .format-size-button span {
     display: none !important;
+  }
+
+  html body.mobile-layout .checklist-items {
+    max-height: none !important;
+    overflow: visible !important;
+    align-content: start !important;
+    gap: 10px !important;
+  }
+
+  html body.mobile-layout .check-item {
+    display: block !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 10px !important;
+  }
+
+  html body.mobile-layout .check-item-main {
+    display: grid !important;
+    grid-template-columns: 28px 32px minmax(0, 1fr) 34px 34px !important;
+    align-items: center !important;
+    gap: 8px !important;
+    min-height: 52px !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  html body.mobile-layout .editor.finalized .check-item-main {
+    grid-template-columns: 34px minmax(0, 1fr) !important;
+    min-height: 50px !important;
+  }
+
+  html body.mobile-layout .check-item-main > [hidden] {
+    display: none !important;
+  }
+
+  html body.mobile-layout .check-item-main .item-drag-handle {
+    width: 28px !important;
+    min-width: 28px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+  }
+
+  html body.mobile-layout .check-item-main input[type="checkbox"] {
+    width: 32px !important;
+    min-width: 32px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    margin: 0 !important;
+    align-self: center !important;
+  }
+
+  html body.mobile-layout .check-item .item-rich-text {
+    display: block !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    min-height: 42px !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 8px 4px !important;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    line-height: 1.35 !important;
+  }
+
+  html body.mobile-layout .editor.finalized .check-item .item-rich-text {
+    min-height: 36px !important;
+    padding: 6px 4px !important;
+  }
+
+  html body.mobile-layout .check-item-image {
+    margin: 10px 0 0 68px !important;
+    width: min(220px, calc(100% - 68px)) !important;
+  }
+
+  html body.mobile-layout .shopping-items {
+    max-height: none !important;
+    overflow: visible !important;
+    align-content: start !important;
+    gap: 12px !important;
+  }
+
+  html body.mobile-layout .shopping-item {
+    position: relative !important;
+    display: grid !important;
+    grid-template-columns: 96px minmax(0, 1fr) 50px 34px !important;
+    grid-template-areas:
+      "media name qty remove"
+      "media . . remove"
+      "price price price check" !important;
+    align-items: center !important;
+    gap: 10px !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 14px !important;
+  }
+
+  html body.mobile-layout .editor.finalized .shopping-item {
+    grid-template-columns: 96px minmax(0, 1fr) 50px !important;
+    grid-template-areas:
+      "media name qty"
+      "media . ."
+      "price price check" !important;
+  }
+
+  html body.mobile-layout .editor.finalized .shopping-item:not(.has-image) {
+    grid-template-columns: minmax(0, 1fr) 50px 34px !important;
+    grid-template-areas:
+      "name qty qty"
+      "price price check" !important;
+  }
+
+  html body.mobile-layout .shopping-item .item-drag-handle {
+    position: absolute !important;
+    top: 20px !important;
+    left: 20px !important;
+    z-index: 2 !important;
+    width: 28px !important;
+    min-width: 28px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    border: 1px solid color-mix(in srgb, var(--line) 72%, transparent) !important;
+    background: color-mix(in srgb, var(--surface) 78%, transparent) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+  }
+
+  html body.mobile-layout .shopping-name {
+    grid-area: name !important;
+    align-self: start !important;
+    min-height: 44px !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 2px 0 !important;
+    color: var(--text) !important;
+    font-size: 15px !important;
+    line-height: 1.25 !important;
+    font-weight: 560 !important;
+  }
+
+  html body.mobile-layout .shopping-qty {
+    grid-area: qty !important;
+    justify-self: stretch !important;
+    align-self: start !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 38px !important;
+    border: 1px solid var(--line-soft) !important;
+    border-radius: 999px !important;
+    padding: 0 8px !important;
+    background: var(--surface-hover) !important;
+    color: var(--text) !important;
+    text-align: center !important;
+    font-size: 15px !important;
+  }
+
+  html body.mobile-layout .shopping-price-wrap {
+    grid-area: price !important;
+    display: flex !important;
+    align-items: baseline !important;
+    gap: 5px !important;
+    min-width: 0 !important;
+    padding-top: 2px !important;
+  }
+
+  html body.mobile-layout .shopping-currency-symbol {
+    display: inline !important;
+    color: var(--text) !important;
+    font-size: 24px !important;
+    font-weight: 760 !important;
+    line-height: 1 !important;
+  }
+
+  html body.mobile-layout .shopping-price {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 42px !important;
+    border: 0 !important;
+    background: transparent !important;
+    color: var(--text) !important;
+    text-align: left !important;
+    font-size: 27px !important;
+    font-weight: 760 !important;
+    line-height: 1 !important;
+  }
+
+  html body.mobile-layout .shopping-price::placeholder {
+    color: var(--text) !important;
+    opacity: 1 !important;
+  }
+
+  html body.mobile-layout .shopping-item input[type="checkbox"] {
+    grid-area: check !important;
+    justify-self: end !important;
+    align-self: center !important;
+    width: 34px !important;
+    min-width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    margin: 0 !important;
+  }
+
+  html body.mobile-layout .shopping-image-button,
+  html body.mobile-layout .shopping-item-image {
+    grid-area: media !important;
+    align-self: stretch !important;
+    width: 96px !important;
+    height: 96px !important;
+    min-width: 96px !important;
+    min-height: 96px !important;
+    margin: 0 !important;
+    border: 1px solid var(--line-soft) !important;
+    border-radius: 20px !important;
+    background: color-mix(in srgb, var(--text) 8%, var(--surface-hover)) !important;
+    box-shadow: none !important;
+  }
+
+  html body.mobile-layout .shopping-image-button {
+    display: grid !important;
+    place-items: center !important;
+    color: var(--text-soft) !important;
+  }
+
+  html body.mobile-layout .shopping-image-button svg {
+    width: 26px !important;
+    height: 26px !important;
+  }
+
+  html body.mobile-layout .shopping-item.has-image .shopping-image-button {
+    display: none !important;
+  }
+
+  html body.mobile-layout .shopping-item-image[hidden] {
+    display: none !important;
+  }
+
+  html body.mobile-layout .shopping-item-image img {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    object-fit: cover !important;
+  }
+
+  html body.mobile-layout .shopping-item-image .icon-button {
+    top: 7px !important;
+    right: 7px !important;
+  }
+
+  html body.mobile-layout .shopping-item > .icon-button.danger:not(.small) {
+    grid-area: remove !important;
+    justify-self: end !important;
+    align-self: start !important;
+    width: 34px !important;
+    min-width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+  }
+
+  html body.mobile-layout .shopping-form {
+    display: grid !important;
+    grid-template-columns: 96px minmax(0, 1fr) 50px !important;
+    grid-template-areas:
+      "media name qty"
+      "media . ."
+      "price action action" !important;
+    align-items: center !important;
+    gap: 10px !important;
+    width: 100% !important;
+    min-height: 158px !important;
+    border: 1px solid var(--line-soft) !important;
+    border-radius: 20px !important;
+    padding: 14px !important;
+    background: var(--ios-card) !important;
+    box-sizing: border-box !important;
+  }
+
+  html body.mobile-layout .shopping-form-media {
+    grid-area: media !important;
+    display: grid !important;
+    place-items: center !important;
+    align-self: stretch !important;
+    width: 96px !important;
+    height: 96px !important;
+    min-width: 96px !important;
+    min-height: 96px !important;
+    border: 1px solid var(--line-soft) !important;
+    border-radius: 20px !important;
+    background: color-mix(in srgb, var(--text) 8%, var(--surface-hover)) !important;
+    color: var(--text-soft) !important;
+  }
+
+  html body.mobile-layout .shopping-form-media svg {
+    width: 26px !important;
+    height: 26px !important;
+  }
+
+  html body.mobile-layout .shopping-form #newShoppingItemInput {
+    grid-area: name !important;
+    align-self: start !important;
+    min-height: 44px !important;
+    height: auto !important;
+    border: 0 !important;
+    border-radius: 12px !important;
+    padding: 2px 0 !important;
+    background: transparent !important;
+    color: var(--text) !important;
+    font-size: 15px !important;
+    font-weight: 560 !important;
+    line-height: 1.25 !important;
+    text-align: left !important;
+  }
+
+  html body.mobile-layout .shopping-form #newShoppingQtyInput {
+    grid-area: qty !important;
+    align-self: start !important;
+    justify-self: stretch !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 38px !important;
+    border: 1px solid var(--line-soft) !important;
+    border-radius: 999px !important;
+    padding: 0 10px !important;
+    background: var(--surface-hover) !important;
+    color: var(--text) !important;
+    text-align: center !important;
+    font-size: 15px !important;
+  }
+
+  html body.mobile-layout .shopping-form #newShoppingPriceInput {
+    grid-area: price !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 42px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    color: var(--text) !important;
+    text-align: left !important;
+    font-size: 27px !important;
+    font-weight: 760 !important;
+    line-height: 1 !important;
+  }
+
+  html body.mobile-layout .shopping-form #newShoppingPriceInput::placeholder {
+    color: var(--text-muted) !important;
+    opacity: .72 !important;
+  }
+
+  html body.mobile-layout .shopping-form .primary-action {
+    grid-area: action !important;
+    justify-self: stretch !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 44px !important;
+    border-radius: 999px !important;
+    padding: 0 12px !important;
+    font-size: 14px !important;
+    white-space: nowrap !important;
+  }
+}
+
+@media (max-width: 430px) {
+  html body.mobile-layout .check-item-main {
+    grid-template-columns: 26px 31px minmax(0, 1fr) 32px 32px !important;
+    gap: 7px !important;
+  }
+
+  html body.mobile-layout .editor.finalized .check-item-main {
+    grid-template-columns: 32px minmax(0, 1fr) !important;
+  }
+
+  html body.mobile-layout .check-item-image {
+    margin-left: 64px !important;
+    width: min(210px, calc(100% - 64px)) !important;
+  }
+
+  html body.mobile-layout .shopping-item {
+    grid-template-columns: 82px minmax(0, 1fr) 42px 32px !important;
+    gap: 8px !important;
+    padding: 12px !important;
+  }
+
+  html body.mobile-layout .editor.finalized .shopping-item {
+    grid-template-columns: 82px minmax(0, 1fr) 32px !important;
+  }
+
+  html body.mobile-layout .editor.finalized .shopping-item:not(.has-image) {
+    grid-template-columns: minmax(0, 1fr) 42px 32px !important;
+  }
+
+  html body.mobile-layout .shopping-image-button,
+  html body.mobile-layout .shopping-item-image {
+    width: 82px !important;
+    height: 82px !important;
+    min-width: 82px !important;
+    min-height: 82px !important;
+  }
+
+  html body.mobile-layout .shopping-price {
+    font-size: 24px !important;
+  }
+
+  html body.mobile-layout .shopping-currency-symbol {
+    font-size: 22px !important;
+  }
+
+  html body.mobile-layout .shopping-form {
+    grid-template-columns: 82px minmax(0, 1fr) 42px !important;
+    gap: 8px !important;
+    padding: 12px !important;
+  }
+
+  html body.mobile-layout .shopping-form-media {
+    width: 82px !important;
+    height: 82px !important;
+    min-width: 82px !important;
+    min-height: 82px !important;
+  }
+
+  html body.mobile-layout .shopping-form #newShoppingPriceInput {
+    font-size: 24px !important;
+  }
+
+  html body.mobile-layout .shopping-form .primary-action {
+    padding: 0 10px !important;
+    font-size: 13px !important;
   }
 }

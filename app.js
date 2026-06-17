@@ -1634,12 +1634,16 @@ function renderShopping(note) {
     row.className = "shopping-item";
     row.dataset.itemId = item.id;
     row.classList.toggle("done", item.done);
+    row.classList.toggle("has-image", Boolean(item.image?.dataUrl));
     row.innerHTML = `
       <button class="block-drag-handle item-drag-handle" type="button" draggable="true" aria-label="Mover compra"><svg><use href="#icon-grip"></use></svg></button>
       <input type="checkbox" aria-label="Marcar compra" />
       <div class="shopping-name item-rich-text" data-rich-editor data-rich-kind="shopping" data-item-id="${item.id}" contenteditable="true" spellcheck="true" role="textbox" aria-label="Item da compra" data-placeholder="Item da compra"></div>
       <input class="shopping-qty" type="number" min="0" step="0.01" aria-label="Quantidade" />
-      <input class="shopping-price" type="number" min="0" step="0.01" aria-label="Valor" />
+      <label class="shopping-price-wrap">
+        <span class="shopping-currency-symbol">${escapeHtml(getCurrencySymbol(note.currency || "BRL"))}</span>
+        <input class="shopping-price" type="number" min="0" step="0.01" aria-label="Valor" placeholder="0,00" />
+      </label>
       <button class="icon-button shopping-image-button" type="button" aria-label="Adicionar imagem à compra">
         <svg><use href="#icon-image"></use></svg>
       </button>
@@ -1705,7 +1709,11 @@ function renderShopping(note) {
     });
 
     imageButton.addEventListener("click", () => openShoppingImagePicker(item.id));
-    removeImageButton.addEventListener("click", () => updateShoppingItem(item.id, { image: null }));
+    imageWrap.addEventListener("click", () => openShoppingImagePicker(item.id));
+    removeImageButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      updateShoppingItem(item.id, { image: null });
+    });
 
     removeButton.addEventListener("click", () => {
       removeShoppingItem(item.id);
@@ -4143,6 +4151,15 @@ function formatCurrency(value, currency = "BRL") {
     style: "currency",
     currency: currency || "BRL",
   }).format(normalizeNumber(value, 0));
+}
+
+function getCurrencySymbol(currency = "BRL") {
+  const parts = new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: currency || "BRL",
+    currencyDisplay: "narrowSymbol",
+  }).formatToParts(0);
+  return parts.find((part) => part.type === "currency")?.value || currency || "BRL";
 }
 
 function toggleTheme() {
