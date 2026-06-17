@@ -99,6 +99,16 @@
         <path d="M7 3h7l4 4v14H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
         <path d="M14 3v5h5" />
       </symbol>
+      <symbol id="icon-download" viewBox="0 0 24 24">
+        <path d="M12 3v12" />
+        <path d="m7 10 5 5 5-5" />
+        <path d="M5 21h14" />
+      </symbol>
+      <symbol id="icon-upload" viewBox="0 0 24 24">
+        <path d="M12 21V9" />
+        <path d="m7 14 5-5 5 5" />
+        <path d="M5 3h14" />
+      </symbol>
       <symbol id="icon-cart" viewBox="0 0 24 24">
         <path d="M6 6h15l-2 8H8L6 3H3" />
         <path d="M9 20h.01M18 20h.01" />
@@ -682,6 +692,7 @@
             <button type="button" data-settings-tab="appearance"><svg><use href="#icon-palette"></use></svg>Aparência</button>
             <button type="button" data-settings-tab="folders"><svg><use href="#icon-folder"></use></svg>Pastas</button>
             <button type="button" data-settings-tab="archived"><svg><use href="#icon-archive"></use></svg>Arquivadas</button>
+            <button type="button" data-settings-tab="recovery"><svg><use href="#icon-restore"></use></svg>Recuperação</button>
           </nav>
           <button class="secondary-action logout-action" id="logoutButton" type="button"><svg><use href="#icon-log-out"></use></svg>Sair</button>
         </aside>
@@ -737,6 +748,28 @@
           <section class="settings-panel" data-settings-panel="archived">
             <div class="settings-page-title"><h2>Notas arquivadas</h2><p>Notas arquivadas ficam fora da lista principal.</p></div>
             <div class="archived-notes-list" id="archivedNotesList"></div>
+          </section>
+          <section class="settings-panel" data-settings-panel="recovery">
+            <div class="settings-page-title"><h2>Recuperação</h2><p>Baixe um backup das suas notas ou recupere tudo em outro aparelho.</p></div>
+            <div class="recovery-actions">
+              <article class="recovery-card">
+                <span><svg><use href="#icon-download"></use></svg></span>
+                <div>
+                  <strong>Baixar notas</strong>
+                  <small>Salva notas, pastas, imagens, rabiscos, metas, lixeira e aparência em um arquivo.</small>
+                </div>
+                <button class="primary-action filled" id="downloadBackupButton" type="button">Baixar</button>
+              </article>
+              <article class="recovery-card">
+                <span><svg><use href="#icon-upload"></use></svg></span>
+                <div>
+                  <strong>Recuperar notas</strong>
+                  <small>Importa um backup do Noti e substitui as notas deste navegador.</small>
+                </div>
+                <button class="secondary-action" id="restoreBackupButton" type="button">Recuperar</button>
+                <input id="restoreBackupInput" type="file" accept=".json,application/json" hidden />
+              </article>
+            </div>
           </section>
         </main>
       </section>

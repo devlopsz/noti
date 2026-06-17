@@ -3,6 +3,8 @@ const THEME_KEY = "checklist-os-theme";
 const USER_STORE_KEY = "noti-users-v1";
 const CURRENT_USER_KEY = "noti-current-user-v1";
 const PREFS_KEY = "noti-preferences-v1";
+const BACKUP_TYPE = "noti-backup";
+const BACKUP_VERSION = 1;
 const MAX_ATTACHMENT_BYTES = 2.5 * 1024 * 1024;
 const DEFAULT_TOOLBAR_ITEMS = ["theme", "separator-main", "attach", "draw", "drawingBlock", "pin", "archive", "delete", "restore", "search", "settings", "account"];
 const TOOLBAR_LABELS = {
@@ -298,6 +300,9 @@ const elements = {
   saveFolderButton: $("#saveFolderButton"),
   deleteFolderButton: $("#deleteFolderButton"),
   archivedNotesList: $("#archivedNotesList"),
+  downloadBackupButton: $("#downloadBackupButton"),
+  restoreBackupButton: $("#restoreBackupButton"),
+  restoreBackupInput: $("#restoreBackupInput"),
   logoutButton: $("#logoutButton"),
   noteCardTemplate: $("#noteCardTemplate"),
 };
@@ -383,6 +388,9 @@ function bindEvents() {
   elements.saveFolderButton.addEventListener("click", saveFolderDialog);
   elements.cancelFolderEditButton.addEventListener("click", closeFolderDialog);
   elements.deleteFolderButton.addEventListener("click", deleteFolderFromDialog);
+  elements.downloadBackupButton?.addEventListener("click", downloadNotesBackup);
+  elements.restoreBackupButton?.addEventListener("click", () => elements.restoreBackupInput?.click());
+  elements.restoreBackupInput?.addEventListener("change", handleBackupRestore);
   elements.logoutButton.addEventListener("click", logoutUser);
   elements.textFormatToolbar?.addEventListener("mousedown", handleTextFormatMouseDown);
   elements.textFormatToolbar?.addEventListener("click", handleTextFormatClick);
@@ -4191,8 +4199,8 @@ function normalizeTheme(theme) {
   return ["light", "dark", "coffee"].includes(theme) ? theme : "light";
 }
 
-function loadPreferences() {
-  const fallback = {
+function getDefaultPreferences() {
+  return {
     theme: normalizeTheme(localStorage.getItem(THEME_KEY) || "light"),
     accent: "#b98500",
     defaultFolderColor: "#007aff",
@@ -4205,26 +4213,37 @@ function loadPreferences() {
     fontDataUrl: "",
     sidebarCollapsed: false,
   };
+}
 
+function normalizePreferencesData(saved, fallback = getDefaultPreferences()) {
+  if (!saved || typeof saved !== "object") return { ...fallback };
+  const normalized = {
+    ...fallback,
+    ...saved,
+    theme: normalizeTheme(saved.theme || fallback.theme),
+    accent: normalizeAccent(saved.accent || fallback.accent),
+    defaultFolderColor: normalizeAccent(saved.defaultFolderColor || fallback.defaultFolderColor),
+    toolbarItems: normalizeToolbarItems(saved.toolbarItems),
+    toolbarLocked: Boolean(saved.toolbarLocked),
+    toolbarDrawingAdded: Boolean(saved.toolbarDrawingAdded),
+    customCursor: saved.customCursor !== false,
+    sidebarCollapsed: Boolean(saved.sidebarCollapsed),
+    fontFamily: typeof saved.fontFamily === "string" ? saved.fontFamily : fallback.fontFamily,
+    fontFileName: typeof saved.fontFileName === "string" ? saved.fontFileName : fallback.fontFileName,
+    fontDataUrl: typeof saved.fontDataUrl === "string" ? saved.fontDataUrl : fallback.fontDataUrl,
+  };
+  if (!saved.toolbarDrawingAdded) {
+    normalized.toolbarItems = mergeToolbarItemsWithDefaults(normalized.toolbarItems, ["draw", "drawingBlock"]);
+    normalized.toolbarDrawingAdded = true;
+  }
+  return normalized;
+}
+
+function loadPreferences() {
+  const fallback = getDefaultPreferences();
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || "null");
-    if (!saved || typeof saved !== "object") return fallback;
-    const normalized = {
-      ...fallback,
-      ...saved,
-      theme: normalizeTheme(saved.theme || fallback.theme),
-      accent: normalizeAccent(saved.accent || fallback.accent),
-      defaultFolderColor: normalizeAccent(saved.defaultFolderColor || fallback.defaultFolderColor),
-      toolbarItems: normalizeToolbarItems(saved.toolbarItems),
-      toolbarLocked: Boolean(saved.toolbarLocked),
-      toolbarDrawingAdded: Boolean(saved.toolbarDrawingAdded),
-      customCursor: saved.customCursor !== false,
-      sidebarCollapsed: Boolean(saved.sidebarCollapsed),
-    };
-    if (!saved.toolbarDrawingAdded) {
-      normalized.toolbarItems = mergeToolbarItemsWithDefaults(normalized.toolbarItems, ["draw", "drawingBlock"]);
-      normalized.toolbarDrawingAdded = true;
-    }
+    const normalized = normalizePreferencesData(saved, fallback);
     localStorage.setItem(PREFS_KEY, JSON.stringify(normalized));
     return normalized;
   } catch (error) {
@@ -4889,7 +4908,7 @@ function openSettingsModal(tab = "profile") {
 }
 
 function setActiveSettingsTab(tab) {
-  const nextTab = ["profile", "appearance", "folders", "archived"].includes(tab) ? tab : "profile";
+  const nextTab = ["profile", "appearance", "folders", "archived", "recovery"].includes(tab) ? tab : "profile";
   elements.settingsTabs.forEach((button) => button.classList.toggle("active", button.dataset.settingsTab === nextTab));
   elements.settingsPanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.settingsPanel === nextTab));
 }
@@ -5133,6 +5152,121 @@ function renderArchivedNotes() {
   });
 }
 
+function downloadNotesBackup() {
+  const payload = {
+    type: BACKUP_TYPE,
+    version: BACKUP_VERSION,
+    app: "Noti",
+    exportedAt: new Date().toISOString(),
+    summary: {
+      notes: state.notes.length,
+      folders: state.folders.length,
+      attachments: state.notes.reduce((total, note) => {
+        const checklistImages = note.items.filter((item) => item.image?.dataUrl).length;
+        const shoppingImages = note.shoppingItems.filter((item) => item.image?.dataUrl).length;
+        return total + note.attachments.length + checklistImages + shoppingImages;
+      }, 0),
+      drawings: state.notes.reduce((total, note) => total + note.pageDrawings.length + note.drawingBlocks.length, 0),
+    },
+    state: clonePlainData(state),
+    preferences: clonePlainData(preferences),
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.href = url;
+  link.download = `noti-backup-${formatBackupDate(new Date())}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
+  showToast("Backup das notas baixado");
+}
+
+async function handleBackupRestore() {
+  const file = elements.restoreBackupInput?.files?.[0];
+  if (elements.restoreBackupInput) elements.restoreBackupInput.value = "";
+  if (!file) return;
+
+  try {
+    const parsed = JSON.parse(await readFileAsText(file));
+    const nextState = extractBackupState(parsed);
+    const nextPreferences = extractBackupPreferences(parsed);
+    const noteCount = nextState.notes.length;
+    const folderCount = nextState.folders.length;
+    const shouldRestore = confirm(
+      `Recuperar este backup com ${noteCount} ${noteCount === 1 ? "nota" : "notas"} e ${folderCount} ${folderCount === 1 ? "pasta" : "pastas"}?\n\nAs notas atuais deste navegador serão substituídas.`
+    );
+    if (!shouldRestore) return;
+
+    restoreBackupData(nextState, nextPreferences);
+    showToast("Backup recuperado");
+  } catch (error) {
+    console.warn("Backup inválido.", error);
+    showToast("Arquivo de backup inválido");
+  }
+}
+
+function extractBackupState(payload) {
+  const candidate = payload?.type === BACKUP_TYPE ? payload.state : payload?.state || payload;
+  if (!candidate || !Array.isArray(candidate.folders) || !Array.isArray(candidate.notes)) {
+    throw new Error("Backup sem notas ou pastas");
+  }
+  return normalizeState(candidate);
+}
+
+function extractBackupPreferences(payload) {
+  if (!payload || payload.type !== BACKUP_TYPE || !payload.preferences || typeof payload.preferences !== "object") {
+    return null;
+  }
+  return normalizePreferencesData(payload.preferences, preferences);
+}
+
+function restoreBackupData(nextState, nextPreferences = null) {
+  const previousFolders = state.folders;
+  const previousNotes = state.notes;
+  const previousPreferences = preferences;
+
+  state.folders = nextState.folders;
+  state.notes = nextState.notes;
+  if (nextPreferences) preferences = nextPreferences;
+  currentView = "all";
+  selectedNoteId = state.notes.find((note) => !note.trashed && !note.archived)?.id ?? state.notes.find((note) => !note.trashed)?.id ?? state.notes[0]?.id ?? null;
+  draggedNoteId = null;
+  draggedNoteBlockIds = [];
+  draggedChecklistItemId = "";
+  draggedShoppingItemId = "";
+  draggedDrawingBlockId = "";
+  drawingRedoStacks.clear();
+
+  try {
+    saveState();
+    if (nextPreferences) {
+      savePreferences();
+      localStorage.setItem(THEME_KEY, preferences.theme);
+      applyTheme(preferences.theme);
+      applyPreferences();
+    }
+  } catch (error) {
+    state.folders = previousFolders;
+    state.notes = previousNotes;
+    preferences = previousPreferences;
+    throw error;
+  }
+
+  render();
+}
+
+function clonePlainData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function formatBackupDate(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
+}
+
 function unarchiveNote(noteId) {
   const note = state.notes.find((item) => item.id === noteId);
   if (!note) return;
@@ -5304,6 +5438,15 @@ function readFileAsDataUrl(file) {
     reader.addEventListener("load", () => resolve(reader.result));
     reader.addEventListener("error", () => reject(reader.error));
     reader.readAsDataURL(file);
+  });
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsText(file);
   });
 }
 
