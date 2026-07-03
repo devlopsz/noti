@@ -7189,6 +7189,25 @@ body.sidebar-collapsed .brand-mark {
   justify-content: flex-end;
 }
 
+.autocorrect-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.autocorrect-advanced-button {
+  min-height: 38px !important;
+  border-radius: 999px !important;
+  padding: 0 18px !important;
+  font-weight: 500 !important;
+}
+
+.autocorrect-advanced-button[hidden] {
+  display: none !important;
+}
+
 .setting-label-stack {
   display: grid;
   gap: 4px;
@@ -7206,6 +7225,74 @@ body.sidebar-collapsed .brand-mark {
   font-size: 12px;
   font-weight: 400;
   line-height: 1.25;
+}
+
+.autocorrect-dialog {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 170;
+  display: grid;
+  width: min(520px, calc(100vw - 34px));
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  padding: 28px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 34px 110px color-mix(in srgb, #000 28%, transparent);
+  transform: translate(-50%, -50%);
+}
+
+.autocorrect-dialog[hidden] {
+  display: none !important;
+}
+
+.autocorrect-dialog h2,
+.autocorrect-dialog p {
+  margin: 0;
+}
+
+.autocorrect-dialog h2 {
+  padding-right: 36px;
+  font-size: 25px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.autocorrect-dialog p,
+.autocorrect-dialog small {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.autocorrect-dialog label {
+  display: grid;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 520;
+}
+
+.autocorrect-dialog textarea {
+  width: 100%;
+  min-height: 190px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px 16px;
+  outline: 0;
+  background: var(--surface-hover);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.autocorrect-dialog textarea:focus {
+  border-color: color-mix(in srgb, var(--accent) 54%, var(--line));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 body.custom-cursor,
@@ -8305,6 +8392,69 @@ body.custom-cursor .draw-tool-card.dragging .draw-tool-head {
     margin-left: auto !important;
   }
 
+  body.mobile-screen-list .mobile-account-actions {
+    order: 3 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+    min-width: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  body.mobile-screen-editor .mobile-account-actions,
+  body.mobile-screen-folders .mobile-account-actions {
+    display: none !important;
+  }
+
+  body.mobile-screen-list .mobile-settings-button,
+  body.mobile-screen-list .mobile-account-button {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 38px !important;
+    border: 1px solid color-mix(in srgb, var(--line) 82%, transparent) !important;
+    border-radius: 999px !important;
+    background: color-mix(in srgb, var(--surface) 92%, transparent) !important;
+    color: var(--text) !important;
+    box-shadow: 0 8px 24px color-mix(in srgb, #000 7%, transparent) !important;
+    backdrop-filter: blur(18px) !important;
+    -webkit-backdrop-filter: blur(18px) !important;
+  }
+
+  body.mobile-screen-list .mobile-settings-button {
+    width: 38px !important;
+    min-width: 38px !important;
+    padding: 0 !important;
+    color: var(--text-muted) !important;
+  }
+
+  body.mobile-screen-list .mobile-account-button {
+    width: auto !important;
+    max-width: 132px !important;
+    gap: 7px !important;
+    padding: 0 12px 0 6px !important;
+    font-size: 15px !important;
+    font-weight: 560 !important;
+  }
+
+  body.mobile-screen-list .mobile-account-button .account-avatar {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+  }
+
+  body.mobile-screen-list .mobile-account-button span:last-child {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.mobile-screen-list .mobile-settings-button svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
   body.mobile-screen-list .mobile-nav-back {
     order: 1 !important;
   }
@@ -8404,12 +8554,40 @@ body.custom-cursor .draw-tool-card.dragging .draw-tool-head {
     line-height: 1 !important;
   }
 
+  body.mobile-screen-list .panel-heading h2.mobile-greeting-title {
+    display: grid !important;
+    justify-items: center !important;
+    gap: 10px !important;
+    margin: 22px 0 24px !important;
+    color: var(--text) !important;
+    text-align: center !important;
+    white-space: normal !important;
+    font-size: clamp(29px, 7.7vw, 36px) !important;
+    font-weight: 400 !important;
+    line-height: 1.12 !important;
+    letter-spacing: 0 !important;
+  }
+
+  body.mobile-screen-list .panel-heading h2.mobile-greeting-title .mobile-greeting-main,
+  body.mobile-screen-list .panel-heading h2.mobile-greeting-title .mobile-greeting-subtitle {
+    display: block !important;
+    max-width: 100% !important;
+  }
+
+  body.mobile-screen-list .panel-heading h2.mobile-greeting-title strong {
+    font-weight: 680 !important;
+  }
+
+  body.mobile-screen-list .panel-heading h2.mobile-greeting-title .mobile-greeting-subtitle {
+    font-weight: 400 !important;
+  }
+
   body.mobile-screen-list .mobile-search-box {
     display: flex !important;
     align-items: center !important;
     gap: 8px !important;
     min-height: 48px !important;
-    margin-top: 14px !important;
+    margin-top: 18px !important;
     border-radius: 14px !important;
     padding: 0 13px !important;
     background: var(--ios-control) !important;
@@ -8424,6 +8602,18 @@ body.custom-cursor .draw-tool-card.dragging .draw-tool-head {
     background: transparent !important;
     color: var(--text) !important;
     font-size: 18px !important;
+  }
+
+  .autocorrect-controls {
+    justify-content: space-between !important;
+  }
+
+  .autocorrect-dialog {
+    width: calc(100vw - 28px) !important;
+    max-height: calc(100svh - 44px) !important;
+    overflow-y: auto !important;
+    border-radius: 24px !important;
+    padding: 24px !important;
   }
 
   body.mobile-layout .search-box[data-toolbar-key="search"],

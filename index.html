@@ -256,6 +256,16 @@
             </button>
           </div>
 
+          <div class="mobile-account-actions mobile-only" id="mobileAccountActions">
+            <button class="mobile-settings-button" id="mobileSettingsButton" type="button" aria-label="Abrir configurações" title="Configurações">
+              <svg><use href="#icon-settings"></use></svg>
+            </button>
+            <button class="mobile-account-button" id="mobileAccountButton" type="button" aria-label="Entrar ou ver perfil" title="Conta">
+              <span class="account-avatar" id="mobileAccountAvatar"><svg><use href="#icon-user"></use></svg></span>
+              <span id="mobileAccountLabel">Entrar</span>
+            </button>
+          </div>
+
           <div class="mac-toolbar" id="topToolbar" aria-label="Barra de ferramentas">
             <button class="mac-tool" id="themeButton" type="button" data-toolbar-key="theme" aria-label="Alternar tema" title="Tema">
               <svg id="themeIcon"><use href="#icon-moon"></use></svg>
@@ -295,9 +305,6 @@
               <span id="accountLabel">Entrar</span>
             </button>
           </div>
-          <button class="mobile-more-button mobile-only" id="mobileMoreButton" type="button" aria-label="Mais opções">
-            <svg><use href="#icon-more"></use></svg>
-          </button>
           <button class="mobile-edit-button mobile-only" id="mobileEditButton" type="button">
             <svg><use href="#icon-edit"></use></svg>
             Editar
@@ -308,10 +315,6 @@
           </button>
           <button class="ghost-action" id="emptyTrashButton">Esvaziar</button>
         </header>
-        <div class="mobile-more-menu" id="mobileMoreMenu" hidden>
-          <button type="button" data-mobile-menu="account"><svg><use href="#icon-user"></use></svg>Entrar</button>
-          <button type="button" data-mobile-menu="settings"><svg><use href="#icon-settings"></use></svg>Configurações</button>
-        </div>
         <div class="toolbar-menu" id="toolbarContextMenu" role="menu" hidden>
           <button type="button" data-toolbar-menu="remove">Remover item</button>
           <button type="button" data-toolbar-menu="separator">Adicionar separador</button>
@@ -744,10 +747,13 @@
               <label class="setting-row cursor-ui-row"><strong>Cursor UI</strong><span class="toggle-label cursor-toggle"><input id="cursorToggleInput" type="checkbox" /></span></label>
             </section>
             <section class="mac-settings-card autocorrect-settings-card">
-              <label class="setting-row autocorrect-ui-row">
+              <div class="setting-row autocorrect-ui-row">
                 <span class="setting-label-stack"><strong>Corretor automático</strong><small>Corrige acentos e palavras comuns enquanto você digita.</small></span>
-                <span class="toggle-label autocorrect-toggle"><input id="autocorrectToggleInput" type="checkbox" /></span>
-              </label>
+                <span class="autocorrect-controls">
+                  <button class="secondary-action autocorrect-advanced-button" id="autocorrectAdvancedButton" type="button">Avançado</button>
+                  <label class="toggle-label autocorrect-toggle" aria-label="Ativar corretor automático"><input id="autocorrectToggleInput" type="checkbox" /></label>
+                </span>
+              </div>
             </section>
           </section>
           <section class="settings-panel" data-settings-panel="folders">
@@ -806,6 +812,16 @@
         <label>Nome da pasta<input id="folderNameInput" type="text" /></label>
         <div class="folder-dialog-colors" id="folderDialogColors"></div>
         <div class="dialog-actions split"><button class="secondary-action danger-text" id="deleteFolderButton" type="button">Excluir</button><span></span><button class="secondary-action" id="cancelFolderEditButton" type="button">Cancelar</button><button class="primary-action filled" id="saveFolderButton" type="button">Salvar</button></div>
+      </section>
+      <section class="autocorrect-dialog" id="autocorrectDialog" role="dialog" aria-modal="true" aria-labelledby="autocorrectDialogTitle" hidden>
+        <button class="icon-button modal-close" id="closeAutocorrectDialogButton" type="button" aria-label="Fechar corretor avançado">
+          <svg><use href="#icon-x"></use></svg>
+        </button>
+        <h2 id="autocorrectDialogTitle">Corretor avançado</h2>
+        <p>Salve palavras especiais para o Noti reconhecer acentos e pequenos erros de digitação. Use uma palavra por linha.</p>
+        <label>Palavras personalizadas<textarea id="autocorrectWordsInput" rows="8" placeholder="Cacá&#10;Paquetá&#10;Estêvão"></textarea></label>
+        <small id="autocorrectWordsCount">0 palavras salvas</small>
+        <div class="dialog-actions"><button class="secondary-action" id="cancelAutocorrectDialogButton" type="button">Cancelar</button><button class="primary-action filled" id="saveAutocorrectWordsButton" type="button">Salvar</button></div>
       </section>
     </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

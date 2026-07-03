@@ -3,6 +3,7 @@ const THEME_KEY = "checklist-os-theme";
 const USER_STORE_KEY = "noti-users-v1";
 const CURRENT_USER_KEY = "noti-current-user-v1";
 const PREFS_KEY = "noti-preferences-v1";
+const FIRST_VISIT_KEY = "noti-first-visit-seen-v1";
 const BACKUP_TYPE = "noti-backup";
 const BACKUP_VERSION = 1;
 const MAX_ATTACHMENT_BYTES = 2.5 * 1024 * 1024;
@@ -103,6 +104,15 @@ const AUTOCORRECT_WORDS = new Map(Object.entries({
   voces: "vocês",
 }));
 const AUTOCORRECT_BOUNDARY_RE = /[\s.,;:!?()[\]{}"“”'‘’/\\-]/u;
+const PORTUGUESE_WORD_GUARD = new Set([
+  "a", "as", "o", "os", "um", "uma", "uns", "umas", "de", "da", "do", "das", "dos", "em", "na", "no", "nas", "nos",
+  "por", "para", "com", "sem", "mas", "mais", "menos", "muito", "muita", "muitos", "muitas", "pouco", "pouca",
+  "casa", "caso", "cada", "caco", "cara", "caro", "cama", "cabo", "copo", "corpo", "canto", "conta", "nota",
+  "lista", "item", "itens", "meta", "metas", "pasta", "pastas", "texto", "foto", "fotos", "imagem", "imagens",
+  "compras", "compra", "preco", "valor", "quantidade", "dinheiro", "hoje", "ontem", "amanha", "agora", "depois",
+  "antes", "tudo", "todo", "toda", "todos", "todas", "bem", "bom", "boa", "ruim", "novo", "nova", "velho", "velha",
+  "fazer", "faz", "feito", "feita", "abrir", "fechar", "salvar", "editar", "criar", "apagar", "mover", "fixar",
+]);
 const PHONE_COUNTRIES = [
   { code: "BR", name: "Brasil", dial: "+55", flag: "\uD83C\uDDE7\uD83C\uDDF7" },
   { code: "US", name: "Estados Unidos", dial: "+1", flag: "\uD83C\uDDFA\uD83C\uDDF8" },
@@ -145,6 +155,10 @@ const BRAND_ASSETS = {
   },
 };
 
+const shouldShowFirstVisitGreeting = !localStorage.getItem(FIRST_VISIT_KEY)
+  && !localStorage.getItem(STORAGE_KEY)
+  && !localStorage.getItem(USER_STORE_KEY)
+  && !localStorage.getItem(PREFS_KEY);
 const state = loadState();
 let users = loadUsers();
 let currentUserId = localStorage.getItem(CURRENT_USER_KEY) || "";
@@ -211,6 +225,11 @@ const elements = {
   sidebarNoteCount: $("#sidebarNoteCount"),
   mobileBackButton: $("#mobileBackButton"),
   mobileBackLabel: $("#mobileBackLabel"),
+  mobileAccountActions: $("#mobileAccountActions"),
+  mobileSettingsButton: $("#mobileSettingsButton"),
+  mobileAccountButton: $("#mobileAccountButton"),
+  mobileAccountAvatar: $("#mobileAccountAvatar"),
+  mobileAccountLabel: $("#mobileAccountLabel"),
   mobileMoreButton: $("#mobileMoreButton"),
   mobileMoreMenu: $("#mobileMoreMenu"),
   mobileEditButton: $("#mobileEditButton"),
@@ -368,6 +387,13 @@ const elements = {
   resetFontButton: $("#resetFontButton"),
   cursorToggleInput: $("#cursorToggleInput"),
   autocorrectToggleInput: $("#autocorrectToggleInput"),
+  autocorrectAdvancedButton: $("#autocorrectAdvancedButton"),
+  autocorrectDialog: $("#autocorrectDialog"),
+  autocorrectWordsInput: $("#autocorrectWordsInput"),
+  autocorrectWordsCount: $("#autocorrectWordsCount"),
+  closeAutocorrectDialogButton: $("#closeAutocorrectDialogButton"),
+  cancelAutocorrectDialogButton: $("#cancelAutocorrectDialogButton"),
+  saveAutocorrectWordsButton: $("#saveAutocorrectWordsButton"),
   fontNameLabel: $("#fontNameLabel"),
   folderDefaultColors: $("#folderDefaultColors"),
   toolbarOrderList: $("#toolbarOrderList"),
@@ -398,6 +424,7 @@ function init() {
   bindEvents();
   renderAccountButton();
   render();
+  localStorage.setItem(FIRST_VISIT_KEY, "true");
 }
 
 function bindEvents() {
@@ -408,10 +435,12 @@ function bindEvents() {
   });
   elements.settingsButton.addEventListener("click", () => openSettingsModal("profile"));
   elements.mobileBackButton.addEventListener("click", handleMobileBack);
-  elements.mobileMoreButton.addEventListener("click", toggleMobileMoreMenu);
+  elements.mobileSettingsButton?.addEventListener("click", openMobileSettings);
+  elements.mobileAccountButton?.addEventListener("click", openMobileAccount);
+  elements.mobileMoreButton?.addEventListener("click", toggleMobileMoreMenu);
   elements.mobileEditButton.addEventListener("click", enableMobileNoteEditing);
   elements.mobileFinishButton.addEventListener("click", toggleFinalizeSelectedNote);
-  elements.mobileMoreMenu.addEventListener("click", handleMobileMoreMenuClick);
+  elements.mobileMoreMenu?.addEventListener("click", handleMobileMoreMenuClick);
   elements.mobileNoteActionMenu.addEventListener("click", handleMobileNoteMenuClick);
   elements.mobileFolderMoveMenu.addEventListener("click", handleMobileFolderMoveMenuClick);
   elements.openSidebarButton.addEventListener("click", openSidebar);
@@ -458,6 +487,11 @@ function bindEvents() {
   elements.resetFontButton.addEventListener("click", resetCustomFont);
   elements.cursorToggleInput.addEventListener("change", toggleCustomCursor);
   elements.autocorrectToggleInput?.addEventListener("change", toggleAutocorrectPreference);
+  elements.autocorrectAdvancedButton?.addEventListener("click", openAutocorrectDialog);
+  elements.closeAutocorrectDialogButton?.addEventListener("click", closeAutocorrectDialog);
+  elements.cancelAutocorrectDialogButton?.addEventListener("click", closeAutocorrectDialog);
+  elements.saveAutocorrectWordsButton?.addEventListener("click", saveAutocorrectWords);
+  elements.autocorrectWordsInput?.addEventListener("input", updateAutocorrectWordsCount);
   elements.topToolbar.addEventListener("contextmenu", openToolbarContextMenu);
   elements.topToolbar.addEventListener("dragstart", startToolbarDrag);
   elements.topToolbar.addEventListener("dragover", handleToolbarDragOver);
@@ -711,7 +745,8 @@ function updateMobileLayoutState() {
   elements.mobileBackLabel.textContent = previousLabel;
   elements.mobileEditButton.hidden = !(mobileScreen === "editor" && getSelectedNote() && getSelectedNote().finalized && !getSelectedNote().trashed);
   elements.mobileFinishButton.hidden = !(mobileScreen === "editor" && getSelectedNote() && !getSelectedNote().finalized && !getSelectedNote().trashed);
-  elements.mobileMoreButton.hidden = mobileScreen !== "list";
+  if (elements.mobileMoreButton) elements.mobileMoreButton.hidden = true;
+  if (elements.mobileAccountActions) elements.mobileAccountActions.hidden = mobileScreen !== "list";
   if (elements.mobileSearchInput.value !== elements.searchInput.value) elements.mobileSearchInput.value = elements.searchInput.value;
   updateCreateMenuButtonMode(isTrashList);
   queueMobileTopbarHeightUpdate();
@@ -769,12 +804,32 @@ function handleMobileBack() {
 
 function toggleMobileMoreMenu(event) {
   event.stopPropagation();
-  if (!isMobileLayout()) return;
+  if (!isMobileLayout() || !elements.mobileMoreMenu) return;
   elements.mobileMoreMenu.hidden = !elements.mobileMoreMenu.hidden;
 }
 
 function closeMobileMoreMenu() {
   if (elements.mobileMoreMenu) elements.mobileMoreMenu.hidden = true;
+}
+
+function openMobileSettings(event) {
+  event?.preventDefault();
+  event?.stopPropagation();
+  closeMobileMoreMenu();
+  mobileSettingsReturnScreen = mobileScreen;
+  openSettingsModal("profile");
+}
+
+function openMobileAccount(event) {
+  event?.preventDefault();
+  event?.stopPropagation();
+  closeMobileMoreMenu();
+  if (getCurrentUser()) {
+    mobileSettingsReturnScreen = mobileScreen;
+    openSettingsModal("profile");
+    return;
+  }
+  openAccountModal("login");
 }
 
 function handleMobileMoreMenuClick(event) {
@@ -1009,7 +1064,7 @@ function renderNotes() {
 
   elements.notesList.replaceChildren();
   elements.emptyState.hidden = visibleNotes.length > 0;
-  elements.viewTitle.textContent = getViewTitle();
+  renderListViewTitle();
   elements.currentScope.textContent = getViewScope();
   elements.viewMeta.textContent = `${visibleNotes.length} ${visibleNotes.length === 1 ? "nota" : "notas"}`;
   const noteCountText = visibleNotes.length + " " + (visibleNotes.length === 1 ? "nota" : "notas");
@@ -1404,7 +1459,7 @@ function renderEditor() {
   elements.shoppingTypeButton.classList.toggle("active", note.type === "shopping");
   elements.goalTypeButton.classList.toggle("active", note.type === "goal");
   if (elements.segmentedControl) elements.segmentedControl.hidden = true;
-  if (elements.textFormatToolbar) elements.textFormatToolbar.hidden = note.type === "goal" || note.trashed || isFinalized;
+  if (elements.textFormatToolbar) elements.textFormatToolbar.hidden = true;
   elements.finalizeNoteButton.hidden = note.trashed;
   elements.finalizeNoteButton.disabled = note.trashed;
   elements.finalizeNoteButton.classList.toggle("editing", isFinalized);
@@ -2500,13 +2555,55 @@ function applyAutocorrectPreference() {
   if (elements.autocorrectToggleInput) {
     elements.autocorrectToggleInput.checked = preferences.autocorrect === true;
   }
+  syncAutocorrectAdvancedButton();
 }
 
 function toggleAutocorrectPreference() {
   preferences.autocorrect = elements.autocorrectToggleInput?.checked === true;
   savePreferences();
   applyAutocorrectPreference();
+  if (!preferences.autocorrect) closeAutocorrectDialog();
   showToast(preferences.autocorrect ? "Corretor automático ativado" : "Corretor automático desativado");
+}
+
+function syncAutocorrectAdvancedButton() {
+  if (!elements.autocorrectAdvancedButton) return;
+  const enabled = preferences.autocorrect === true;
+  elements.autocorrectAdvancedButton.hidden = !enabled;
+  elements.autocorrectAdvancedButton.disabled = !enabled;
+}
+
+function openAutocorrectDialog(event) {
+  event?.preventDefault();
+  event?.stopPropagation();
+  if (preferences.autocorrect !== true) return;
+  elements.modalLayer.hidden = false;
+  elements.autocorrectDialog.hidden = false;
+  elements.autocorrectWordsInput.value = getAutocorrectCustomWords().join("\n");
+  updateAutocorrectWordsCount();
+  setTimeout(() => elements.autocorrectWordsInput.focus(), 0);
+}
+
+function closeAutocorrectDialog() {
+  if (elements.autocorrectDialog) elements.autocorrectDialog.hidden = true;
+  if (elements.accountModal.hidden && elements.settingsModal.hidden && elements.profileEditDialog.hidden && elements.folderEditDialog.hidden) {
+    elements.modalLayer.hidden = true;
+  }
+}
+
+function saveAutocorrectWords() {
+  const words = parseAutocorrectWordsInput(elements.autocorrectWordsInput.value);
+  preferences.autocorrectCustomWords = words;
+  savePreferences();
+  closeAutocorrectDialog();
+  renderAppearanceControls();
+  showToast(words.length ? `${words.length} ${words.length === 1 ? "palavra salva" : "palavras salvas"}` : "Lista avançada limpa");
+}
+
+function updateAutocorrectWordsCount() {
+  if (!elements.autocorrectWordsCount) return;
+  const count = parseAutocorrectWordsInput(elements.autocorrectWordsInput?.value || "").length;
+  elements.autocorrectWordsCount.textContent = `${count} ${count === 1 ? "palavra salva" : "palavras salvas"}`;
 }
 
 function handleAutocorrectInput(event) {
@@ -2698,9 +2795,80 @@ function correctAutocorrectText(text, caretIndex = 0) {
 
 function getAutocorrectReplacement(word) {
   const key = removeDiacritics(word).toLocaleLowerCase("pt-BR");
-  const replacement = AUTOCORRECT_WORDS.get(key);
+  const replacement = AUTOCORRECT_WORDS.get(key) || getCustomAutocorrectReplacement(word, key);
   if (!replacement) return "";
   return matchAutocorrectCase(word, replacement);
+}
+
+function getCustomAutocorrectReplacement(word, key = removeDiacritics(word).toLocaleLowerCase("pt-BR")) {
+  const customWords = getAutocorrectCustomWords();
+  if (!customWords.length) return "";
+  const exact = customWords.find((customWord) => normalizeCustomAutocorrectKey(customWord) === key);
+  if (exact && exact !== word) return exact;
+  if (isProtectedPortugueseWord(key)) return "";
+
+  const compactWord = key.replace(/[^a-z0-9]/g, "");
+  if (compactWord.length < 3) return "";
+  const match = customWords.find((customWord) => {
+    const customKey = normalizeCustomAutocorrectKey(customWord).replace(/[^a-z0-9]/g, "");
+    return customKey.length >= 3
+      && Math.abs(customKey.length - compactWord.length) <= 1
+      && getEditDistanceWithinLimit(compactWord, customKey, 1) <= 1;
+  });
+  return match && match !== word ? match : "";
+}
+
+function isProtectedPortugueseWord(key) {
+  return PORTUGUESE_WORD_GUARD.has(key);
+}
+
+function getAutocorrectCustomWords() {
+  return normalizeAutocorrectCustomWords(preferences.autocorrectCustomWords);
+}
+
+function parseAutocorrectWordsInput(value) {
+  return normalizeAutocorrectCustomWords(String(value || "").split(/[\n,;]/));
+}
+
+function normalizeAutocorrectCustomWords(words) {
+  if (!Array.isArray(words)) return [];
+  const seen = new Set();
+  return words
+    .map((word) => String(word || "").trim().replace(/\s+/g, " "))
+    .filter((word) => word.length >= 2 && /\p{L}/u.test(word))
+    .filter((word) => {
+      const key = normalizeCustomAutocorrectKey(word);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 200);
+}
+
+function normalizeCustomAutocorrectKey(word) {
+  return removeDiacritics(word).toLocaleLowerCase("pt-BR").replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function getEditDistanceWithinLimit(source, target, limit) {
+  if (Math.abs(source.length - target.length) > limit) return limit + 1;
+  let previous = Array.from({ length: target.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= source.length; i += 1) {
+    const current = [i];
+    let rowMin = current[0];
+    for (let j = 1; j <= target.length; j += 1) {
+      const cost = source[i - 1] === target[j - 1] ? 0 : 1;
+      const value = Math.min(
+        previous[j] + 1,
+        current[j - 1] + 1,
+        previous[j - 1] + cost
+      );
+      current[j] = value;
+      rowMin = Math.min(rowMin, value);
+    }
+    if (rowMin > limit) return limit + 1;
+    previous = current;
+  }
+  return previous[target.length];
 }
 
 function removeDiacritics(value) {
@@ -3539,6 +3707,46 @@ function getViewTitle() {
   return "Notas";
 }
 
+function renderListViewTitle() {
+  elements.viewTitle.replaceChildren();
+  const greeting = getMobileGreetingTitle();
+  elements.viewTitle.classList.toggle("mobile-greeting-title", Boolean(greeting));
+
+  if (!greeting) {
+    elements.viewTitle.textContent = getViewTitle();
+    return;
+  }
+
+  const mainLine = document.createElement("span");
+  mainLine.className = "mobile-greeting-main";
+  if (greeting.kind === "user") {
+    const hello = document.createElement("strong");
+    hello.textContent = "Olá";
+    const name = document.createElement("strong");
+    name.textContent = greeting.name;
+    mainLine.append(hello, document.createTextNode(" "), name, document.createTextNode("!"));
+  } else {
+    const emphasis = document.createElement("strong");
+    emphasis.textContent = greeting.title;
+    mainLine.append(emphasis);
+  }
+
+  const subtitle = document.createElement("span");
+  subtitle.className = "mobile-greeting-subtitle";
+  subtitle.textContent = greeting.subtitle;
+  elements.viewTitle.append(mainLine, subtitle);
+}
+
+function getMobileGreetingTitle() {
+  if (!isMobileLayout() || mobileScreen !== "list" || currentView !== "all") return null;
+  if (shouldShowFirstVisitGreeting) {
+    return { kind: "first", title: "Olha só! Um novato", subtitle: "Seja muito bem-vindo!" };
+  }
+  const user = getCurrentUser();
+  if (!user) return { kind: "guest", title: "Olá!", subtitle: "O que vamos escrever hoje?" };
+  return { kind: "user", name: getUserFirstName(user), subtitle: "O que vamos escrever hoje?" };
+}
+
 function getViewScope() {
   if (currentView === "trash") return "Excluídas";
   if (currentView === "pinned") return "Prioridade";
@@ -4192,9 +4400,9 @@ function applyTextFormat(command, value = "", options = {}) {
 
 function renderTextFormatToolbar(note = getSelectedNote()) {
   if (!elements.textFormatToolbar || !elements.formatColorOptions) return;
-  placeTextFormatToolbar();
   const enabled = Boolean(note && !note.trashed && !note.finalized && note.type !== "goal");
-  elements.textFormatToolbar.hidden = !enabled;
+  placeTextFormatToolbar();
+  elements.textFormatToolbar.hidden = !enabled || !isMobileLayout();
   if (!enabled) {
     closeFormatSizeMenu();
     closeTextFormatMenu();
@@ -4208,15 +4416,19 @@ function renderTextFormatToolbar(note = getSelectedNote()) {
 function placeTextFormatToolbar() {
   if (!elements.textFormatToolbar) return;
   placeRichTextMenus();
-  if (isMobileLayout()) {
+  if (!isMobileLayout()) {
+    elements.textFormatToolbar.hidden = true;
     if (elements.textFormatToolbar.parentElement !== document.body) {
       document.body.append(elements.textFormatToolbar);
     }
     return;
   }
 
-  if (elements.editorToolbar && elements.textFormatToolbar.parentElement !== elements.editorToolbar) {
-    elements.editorToolbar.insertBefore(elements.textFormatToolbar, elements.finalizeNoteButton);
+  if (isMobileLayout()) {
+    if (elements.textFormatToolbar.parentElement !== document.body) {
+      document.body.append(elements.textFormatToolbar);
+    }
+    return;
   }
 }
 
@@ -4552,6 +4764,7 @@ function getDefaultPreferences() {
     toolbarDrawingAdded: true,
     customCursor: true,
     autocorrect: false,
+    autocorrectCustomWords: [],
     fontFamily: "",
     fontFileName: "",
     fontDataUrl: "",
@@ -4572,6 +4785,7 @@ function normalizePreferencesData(saved, fallback = getDefaultPreferences()) {
     toolbarDrawingAdded: Boolean(saved.toolbarDrawingAdded),
     customCursor: saved.customCursor !== false,
     autocorrect: saved.autocorrect === true,
+    autocorrectCustomWords: normalizeAutocorrectCustomWords(saved.autocorrectCustomWords || fallback.autocorrectCustomWords),
     sidebarCollapsed: Boolean(saved.sidebarCollapsed),
     fontFamily: typeof saved.fontFamily === "string" ? saved.fontFamily : fallback.fontFamily,
     fontFileName: typeof saved.fontFileName === "string" ? saved.fontFileName : fallback.fontFileName,
@@ -4690,6 +4904,7 @@ function renderAppearanceControls() {
   elements.resetFontButton.setAttribute("aria-disabled", String(!hasCustomFont));
   elements.cursorToggleInput.checked = preferences.customCursor !== false;
   if (elements.autocorrectToggleInput) elements.autocorrectToggleInput.checked = preferences.autocorrect === true;
+  syncAutocorrectAdvancedButton();
   if (elements.themeCurrentIcon) elements.themeCurrentIcon.setAttribute("href", themeOption.icon);
   if (elements.themeCurrentLabel) elements.themeCurrentLabel.textContent = themeOption.label;
   renderColorButtons(elements.accentCarousel, ACCENT_COLORS, preferences.accent, (color) => setAccentPreference(color));
@@ -5113,8 +5328,23 @@ function getCurrentUser() {
 
 function renderAccountButton() {
   const user = getCurrentUser();
-  elements.accountLabel.textContent = user ? (user.name.trim().split(" ")[0] || user.username) : "Entrar";
+  const label = user ? getUserFirstName(user) : "Entrar";
+  elements.accountLabel.textContent = label;
+  if (elements.mobileAccountLabel) elements.mobileAccountLabel.textContent = label;
+  elements.accountButton?.classList.toggle("logged-in", Boolean(user));
+  elements.mobileAccountButton?.classList.toggle("logged-in", Boolean(user));
   renderAvatar(elements.accountAvatar, user);
+  renderAvatar(elements.mobileAccountAvatar, user);
+}
+
+function getUserFirstName(user) {
+  return user?.name?.trim().split(/\s+/)[0] || user?.username || "Usuário";
+}
+
+function refreshAccountUi() {
+  renderAccountButton();
+  renderNotes();
+  updateMobileLayoutState();
 }
 
 function openAccountModal(panel = "login") {
@@ -5123,6 +5353,7 @@ function openAccountModal(panel = "login") {
   elements.settingsModal.hidden = true;
   elements.profileEditDialog.hidden = true;
   elements.folderEditDialog.hidden = true;
+  if (elements.autocorrectDialog) elements.autocorrectDialog.hidden = true;
   document.body.classList.remove("mobile-settings-page");
   elements.closeSettingsModal.innerHTML = "<span>‹</span> Voltar ao aplicativo";
   setActiveAccountPanel(panel);
@@ -5204,7 +5435,7 @@ function handleSignup(event) {
   elements.signupCountrySelect.value = "BR";
   currentSignupPhoto = "";
   renderAvatar(elements.signupPhotoPreview, null);
-  renderAccountButton();
+  refreshAccountUi();
   closeModals();
   showToast("Conta local criada");
 }
@@ -5225,7 +5456,7 @@ function handleLogin(event) {
   currentUserId = user.id;
   localStorage.setItem(CURRENT_USER_KEY, currentUserId);
   elements.loginForm.reset();
-  renderAccountButton();
+  refreshAccountUi();
   closeModals();
   showToast("Conta conectada");
 }
@@ -5234,7 +5465,7 @@ function logoutUser() {
   currentUserId = "";
   localStorage.removeItem(CURRENT_USER_KEY);
   pendingProfilePhoto = "";
-  renderAccountButton();
+  refreshAccountUi();
   renderSettings();
   showToast("Você saiu da conta");
 }
@@ -5350,7 +5581,7 @@ function saveProfileSettings() {
   user.updatedAt = Date.now();
   pendingProfilePhoto = "";
   saveUsers();
-  renderAccountButton();
+  refreshAccountUi();
   closeProfileEditDialog();
   renderSettings();
   showToast("Perfil atualizado");
@@ -5372,6 +5603,7 @@ function normalizeUsername(value) {
 }
 
 function renderAvatar(target, user) {
+  if (!target) return;
   target.replaceChildren();
   if (user?.photo) {
     const image = document.createElement("img");
