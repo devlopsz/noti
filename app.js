@@ -180,6 +180,8 @@ let tooltipEventsBound = false;
 let knownPagesSignature = "";
 let latestPagesSignature = "";
 let pagesUpdateTimer = 0;
+let updateReloadInProgress = false;
+let updateReloadRaf = 0;
 let activeTextBlockId = null;
 let activeTextSelection = { start: 0, end: 0 };
 let activeRichEditor = null;
@@ -7032,11 +7034,78 @@ function setUpdateButtonVisible(visible) {
 }
 
 function reloadForPagesUpdate() {
-  if (latestPagesSignature) knownPagesSignature = latestPagesSignature;
-  if (pagesUpdateTimer) window.clearInterval(pagesUpdateTimer);
-  const nextUrl = new URL(location.href);
-  nextUrl.searchParams.set("noti_update", Date.now().toString(36));
-  location.replace(nextUrl.toString());
+  if (updateReloadInProgress) return;
+  updateReloadInProgress = true;
+  hideHoverTooltip();
+  if (elements.updatePageButton) elements.updatePageButton.disabled = true;
+  showUpdateReloadModal();
+  animateUpdateReloadProgress(() => {
+    if (latestPagesSignature) knownPagesSignature = latestPagesSignature;
+    if (pagesUpdateTimer) window.clearInterval(pagesUpdateTimer);
+    const nextUrl = new URL(location.href);
+    nextUrl.searchParams.set("noti_update", Date.now().toString(36));
+    location.replace(nextUrl.toString());
+  });
+}
+
+function showUpdateReloadModal() {
+  const modal = ensureUpdateReloadModal();
+  const bar = modal.querySelector(".update-reload-progress");
+  const label = modal.querySelector("[data-update-progress-label]");
+  bar.style.setProperty("--update-progress", "0%");
+  label.textContent = "0%";
+  modal.hidden = false;
+  requestAnimationFrame(() => modal.classList.add("visible"));
+}
+
+function ensureUpdateReloadModal() {
+  let layer = document.querySelector("#updateReloadLayer");
+  if (layer) return layer;
+  layer = document.createElement("div");
+  layer.id = "updateReloadLayer";
+  layer.className = "update-reload-layer";
+  layer.hidden = true;
+  layer.innerHTML = `
+    <section class="update-reload-card" role="dialog" aria-modal="true" aria-labelledby="updateReloadTitle">
+      <h2 id="updateReloadTitle">Atualizando para a versão mais recente</h2>
+      <p>Estamos preparando a nova versão do Noti.</p>
+      <div class="update-reload-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <span data-update-progress-fill></span>
+        <strong data-update-progress-label>0%</strong>
+      </div>
+    </section>
+  `;
+  document.body.append(layer);
+  return layer;
+}
+
+function animateUpdateReloadProgress(onComplete) {
+  const modal = ensureUpdateReloadModal();
+  const bar = modal.querySelector(".update-reload-progress");
+  const label = modal.querySelector("[data-update-progress-label]");
+  const startedAt = performance.now();
+  const duration = 2200;
+
+  cancelAnimationFrame(updateReloadRaf);
+  const tick = (now) => {
+    const linear = Math.min(1, (now - startedAt) / duration);
+    const eased = 1 - Math.pow(1 - linear, 3);
+    const value = Math.min(100, Math.round(eased * 100));
+    bar.style.setProperty("--update-progress", `${value}%`);
+    label.textContent = `${value}%`;
+    bar.setAttribute("aria-valuenow", String(value));
+
+    if (linear < 1) {
+      updateReloadRaf = requestAnimationFrame(tick);
+      return;
+    }
+
+    bar.style.setProperty("--update-progress", "100%");
+    label.textContent = "100%";
+    bar.setAttribute("aria-valuenow", "100");
+    setTimeout(onComplete, 260);
+  };
+  updateReloadRaf = requestAnimationFrame(tick);
 }
 
 function showToast(message) {
