@@ -36,6 +36,21 @@ const TIME_GAME_KEY_ROWS = [
   ["A", "S", "D", "F", "G", "H", "J", "K", "L", "BACKSPACE"],
   ["Z", "X", "C", "V", "B", "N", "M", "ENTER"],
 ];
+const NOTISUAL_DIFFICULTIES = {
+  easy: { label: "Leve", multiplier: 1.25, points: 80 },
+  normal: { label: "Normal", multiplier: 1, points: 120 },
+  hard: { label: "Difícil", multiplier: 0.78, points: 180 },
+};
+const NOTISUAL_PHASE_TYPES = ["typing", "checks", "trash", "folders", "colors", "numbers"];
+const NOTISUAL_TYPED_PHRASES = [
+  "Organizar ideias deixa tudo mais leve",
+  "Cada nota salva um pequeno plano",
+  "Foco simples vence a bagunca",
+  "Hoje eu termino uma tarefa por vez",
+  "Notas claras criam dias melhores",
+  "Um checklist bom salva tempo",
+];
+const NOTISUAL_COLOR_POOL = ["#b98500", "#007aff", "#34c759", "#ff3b30", "#af52de", "#ff9500", "#64d2ff", "#ff2d55", "#5856d6"];
 const TIME_GAME_BASE_WORDS = [
   "abaco", "abril", "abrir", "acaso", "acido", "adeus", "adubo", "agora", "agudo", "ainda", "album", "algum", "altar", "amado", "amigo", "andar", "anexo", "antes", "areia", "arroz", "astro", "atual",
   "baixo", "banal", "banco", "banho", "barco", "beijo", "bicho", "bunda", "bolsa", "brasa", "bravo", "breve", "briga", "brisa", "bruto", "burro", "busca",
@@ -371,6 +386,8 @@ const selectedNoteIds = new Set();
 let timeGame = createTimeGameState({ active: false });
 let passTimeScreen = "";
 let ticTacToeGame = createTicTacToeState();
+let chessGame = createChessState();
+let notisualGame = createNotisualState();
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -4568,20 +4585,26 @@ function closeDesktopEditorToGreeting() {
 }
 
 function hasPassTimeGameOpen() {
-  return Boolean(passTimeScreen || timeGame.active || ticTacToeGame.active);
+  return Boolean(passTimeScreen || timeGame.active || ticTacToeGame.active || chessGame.active || notisualGame.active);
 }
 
 function closePassTimeGames() {
+  clearNotisualTimers();
   passTimeScreen = "";
   timeGame.active = false;
   ticTacToeGame = createTicTacToeState();
+  chessGame = createChessState();
+  notisualGame = createNotisualState();
 }
 
 function openPassTimeMenu() {
+  clearNotisualTimers();
   selectedNoteId = null;
   passTimeScreen = "menu";
   timeGame.active = false;
   ticTacToeGame = createTicTacToeState();
+  chessGame = createChessState();
+  notisualGame = createNotisualState();
   renderNotes();
   if (isMobileLayout()) showMobileScreen("game");
   renderEditor();
@@ -4600,6 +4623,22 @@ function renderPassTimeGame() {
     renderTicTacToeGame();
     return;
   }
+  if (passTimeScreen === "chess-mode") {
+    renderChessModeMenu();
+    return;
+  }
+  if (passTimeScreen === "chess" && chessGame.active) {
+    renderChessGame();
+    return;
+  }
+  if (passTimeScreen === "notisual-intro") {
+    renderNotisualIntro();
+    return;
+  }
+  if (passTimeScreen === "notisual" && notisualGame.active) {
+    renderNotisualGame();
+    return;
+  }
   renderPassTimeMenu();
 }
 
@@ -4611,44 +4650,94 @@ function renderPassTimeMenu() {
 
   const header = document.createElement("header");
   header.className = "pass-time-header";
-  header.innerHTML = "<span>Passar o Tempo</span><h2>Escolha um jogo</h2><p>Uma pausa rápida, sem sair do Noti.</p>";
+  header.innerHTML = "<h2>Hora da pausa, sem sair do Noti.</h2>";
+
+  const profile = document.createElement("div");
+  profile.className = "pass-time-profile";
+  profile.append(createPassTimeProfileAvatar());
+  const profileText = document.createElement("div");
+  profileText.className = "pass-time-profile-text";
+  profileText.innerHTML = `<strong>${escapeHtml(getPassTimeProfileName())}</strong><span class="pass-time-total-score"><b>${getPassTimeTotalScore()}</b><small>pontos</small></span>`;
+  profile.append(profileText);
 
   const grid = document.createElement("div");
-  grid.className = "pass-time-grid";
+  grid.className = "pass-time-grid pass-time-choice-grid";
   grid.append(
     createPassTimeCard({
       title: "Termo",
-      text: "Adivinhe uma palavra de 5 letras em 6 tentativas.",
-      icon: "T",
+      symbol: "#game-icon-termo",
       action: openTimeGame
     }),
     createPassTimeCard({
       title: "Jogo da velha",
-      text: "Jogue contra o computador ou com outra pessoa.",
-      icon: "X",
+      symbol: "#game-icon-velha",
       action: openTicTacToeModeMenu
+    }),
+    createPassTimeCard({
+      title: "Xadrez",
+      symbol: "#game-icon-xadrez",
+      action: openChessModeMenu
+    }),
+    createPassTimeCard({
+      title: "Notisual",
+      symbol: "#game-icon-notisual",
+      action: openNotisualIntro
     })
   );
 
-  section.append(header, grid);
+  section.append(header, profile, grid);
   elements.editorEmpty.append(section);
 }
 
-function createPassTimeCard({ title, text, icon, action }) {
+function createPassTimeProfileAvatar() {
+  const avatar = document.createElement("span");
+  avatar.className = "pass-time-profile-avatar";
+  renderAvatar(avatar, getCurrentUser());
+  return avatar;
+}
+
+function getPassTimeProfileName() {
+  const user = getCurrentUser();
+  return user ? getUserFirstName(user) : "Visitante";
+}
+
+function getPassTimeTotalScore() {
+  return getTimeGameScore() + getNotisualScore();
+}
+
+function createPassTimeCard({ title, text, icon, symbol, iconOnly = false, action }) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "pass-time-card";
+  button.className = symbol || iconOnly ? "pass-time-card pass-time-choice" : "pass-time-card";
   button.title = title;
-  button.innerHTML = `<span class="pass-time-card-icon">${icon}</span><strong>${title}</strong><small>${text}</small>`;
+  if (symbol) {
+    button.innerHTML = `<svg class="pass-time-choice-icon" aria-hidden="true"><use href="${symbol}"></use></svg><strong>${title}</strong>`;
+  } else if (iconOnly) {
+    button.innerHTML = `<span class="pass-time-choice-icon pass-time-choice-text-icon" aria-hidden="true">${icon}</span><strong>${title}</strong>`;
+  } else {
+    button.innerHTML = `<span class="pass-time-card-icon">${icon}</span><strong>${title}</strong><small>${text}</small>`;
+  }
+  button.addEventListener("click", action);
+  return button;
+}
+
+function createPassTimeModeChoice({ title, symbol, action }) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pass-time-mode-choice";
+  button.title = title;
+  button.innerHTML = `<svg class="pass-time-mode-icon" aria-hidden="true"><use href="${symbol}"></use></svg><strong>${title}</strong>`;
   button.addEventListener("click", action);
   return button;
 }
 
 function openTicTacToeModeMenu() {
+  clearNotisualTimers();
   selectedNoteId = null;
   passTimeScreen = "tic-mode";
   timeGame.active = false;
   ticTacToeGame = createTicTacToeState();
+  chessGame = createChessState();
   if (isMobileLayout()) showMobileScreen("game");
   renderEditor();
 }
@@ -4661,21 +4750,19 @@ function renderTicTacToeModeMenu() {
 
   const header = document.createElement("header");
   header.className = "pass-time-header";
-  header.innerHTML = "<span>Jogo da velha</span><h2>Como você quer jogar?</h2><p>Escolha o modo da partida.</p>";
+  header.innerHTML = "<h2>Como você quer jogar?</h2>";
 
   const grid = document.createElement("div");
-  grid.className = "pass-time-grid";
+  grid.className = "pass-time-mode-grid";
   grid.append(
-    createPassTimeCard({
+    createPassTimeModeChoice({
       title: "Computador",
-      text: "Você joga de X e o Noti responde de O.",
-      icon: "CPU",
+      symbol: "#icon-monitor",
       action: () => startTicTacToeGame("computer")
     }),
-    createPassTimeCard({
-      title: "Outra pessoa",
-      text: "Dois jogadores alternando no mesmo aparelho.",
-      icon: "2P",
+    createPassTimeModeChoice({
+      title: "2 Pessoas",
+      symbol: "#icon-users",
       action: () => startTicTacToeGame("local")
     })
   );
@@ -4707,9 +4794,11 @@ function createTicTacToeState(mode = "local") {
 }
 
 function startTicTacToeGame(mode = "local") {
+  clearNotisualTimers();
   selectedNoteId = null;
   passTimeScreen = "tic";
   timeGame.active = false;
+  chessGame = createChessState();
   ticTacToeGame = { ...createTicTacToeState(mode), active: true, status: mode === "computer" ? "Sua vez" : "Vez do X" };
   if (isMobileLayout()) showMobileScreen("game");
   renderEditor();
@@ -4722,8 +4811,8 @@ function renderTicTacToeGame() {
   game.setAttribute("aria-label", "Jogo da velha");
 
   const header = document.createElement("header");
-  header.className = "pass-time-header tic-tac-toe-header";
-  header.innerHTML = `<span>${ticTacToeGame.mode === "computer" ? "Contra o computador" : "Duas pessoas"}</span><h2>Jogo da velha</h2><p>${ticTacToeGame.status}</p>`;
+  header.className = "pass-time-header pass-time-game-status tic-tac-toe-header";
+  header.innerHTML = `<p>${ticTacToeGame.status}</p>`;
 
   const board = document.createElement("div");
   board.className = "tic-tac-toe-board";
@@ -4805,14 +4894,15 @@ function makeTicTacToeComputerMove() {
 
 function chooseTicTacToeComputerMove(board) {
   const empty = board.map((value, index) => value ? -1 : index).filter((index) => index >= 0);
+  if (!empty.length) return -1;
   const winningMove = findTicTacToeLineMove(board, "O");
-  if (winningMove !== -1) return winningMove;
+  if (winningMove !== -1 && Math.random() < 0.42) return winningMove;
   const blockMove = findTicTacToeLineMove(board, "X");
-  if (blockMove !== -1) return blockMove;
-  if (empty.includes(4)) return 4;
+  if (blockMove !== -1 && Math.random() < 0.32) return blockMove;
+  if (empty.includes(4) && Math.random() < 0.25) return 4;
   const corners = [0, 2, 6, 8].filter((index) => empty.includes(index));
-  if (corners.length) return corners[Math.floor(Math.random() * corners.length)];
-  return empty[0] ?? -1;
+  if (corners.length && Math.random() < 0.35) return corners[Math.floor(Math.random() * corners.length)];
+  return empty[Math.floor(Math.random() * empty.length)] ?? -1;
 }
 
 function findTicTacToeLineMove(board, player) {
@@ -4850,6 +4940,945 @@ function getTicTacToeLines() {
   ];
 }
 
+function openChessModeMenu() {
+  clearNotisualTimers();
+  selectedNoteId = null;
+  passTimeScreen = "chess-mode";
+  timeGame.active = false;
+  ticTacToeGame = createTicTacToeState();
+  chessGame = createChessState();
+  if (isMobileLayout()) showMobileScreen("game");
+  renderEditor();
+}
+
+function renderChessModeMenu() {
+  elements.editorEmpty.replaceChildren();
+  const section = document.createElement("section");
+  section.className = "pass-time-game";
+  section.setAttribute("aria-label", "Escolher modo do xadrez");
+
+  const header = document.createElement("header");
+  header.className = "pass-time-header";
+  header.innerHTML = "<h2>Como você quer jogar?</h2>";
+
+  const grid = document.createElement("div");
+  grid.className = "pass-time-mode-grid";
+  grid.append(
+    createPassTimeModeChoice({
+      title: "Computador",
+      symbol: "#icon-monitor",
+      action: () => startChessGame("computer")
+    }),
+    createPassTimeModeChoice({
+      title: "2 Pessoas",
+      symbol: "#icon-users",
+      action: () => startChessGame("local")
+    })
+  );
+
+  const actions = document.createElement("div");
+  actions.className = "pass-time-actions";
+  const backButton = document.createElement("button");
+  backButton.type = "button";
+  backButton.className = "time-game-next-button";
+  backButton.textContent = "Voltar";
+  backButton.title = "Voltar para jogos";
+  backButton.addEventListener("click", openPassTimeMenu);
+  actions.append(backButton);
+
+  section.append(header, grid, actions);
+  elements.editorEmpty.append(section);
+}
+
+function createChessState(mode = "local") {
+  return {
+    active: false,
+    mode,
+    board: createInitialChessBoard(),
+    turn: "w",
+    selected: -1,
+    status: "Vez das brancas",
+    ended: false,
+    winner: "",
+  };
+}
+
+function createInitialChessBoard() {
+  return [
+    "br", "bn", "bb", "bq", "bk", "bb", "bn", "br",
+    "bp", "bp", "bp", "bp", "bp", "bp", "bp", "bp",
+    "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "",
+    "wp", "wp", "wp", "wp", "wp", "wp", "wp", "wp",
+    "wr", "wn", "wb", "wq", "wk", "wb", "wn", "wr",
+  ];
+}
+
+function startChessGame(mode = "local") {
+  clearNotisualTimers();
+  selectedNoteId = null;
+  passTimeScreen = "chess";
+  timeGame.active = false;
+  ticTacToeGame = createTicTacToeState();
+  chessGame = { ...createChessState(mode), active: true, status: mode === "computer" ? "Sua vez" : "Vez das brancas" };
+  if (isMobileLayout()) showMobileScreen("game");
+  renderEditor();
+}
+
+function renderChessGame() {
+  elements.editorEmpty.replaceChildren();
+  const game = document.createElement("section");
+  game.className = "chess-game";
+  game.setAttribute("aria-label", "Jogo de xadrez");
+
+  const header = document.createElement("header");
+  header.className = "pass-time-header pass-time-game-status chess-header";
+  header.innerHTML = `<p>${chessGame.status}</p>`;
+
+  const board = document.createElement("div");
+  board.className = "chess-board";
+  board.setAttribute("role", "grid");
+  const legalMoves = new Set(chessGame.selected >= 0 ? getChessLegalMoves(chessGame.selected) : []);
+  chessGame.board.forEach((piece, index) => {
+    const row = Math.floor(index / 8);
+    const col = index % 8;
+    const square = document.createElement("button");
+    square.type = "button";
+    square.className = `chess-square ${(row + col) % 2 ? "dark" : "light"}`;
+    square.dataset.index = String(index);
+    if (piece) square.dataset.piece = piece;
+    if (index === chessGame.selected) square.classList.add("selected");
+    if (legalMoves.has(index)) square.classList.add("legal");
+    square.textContent = getChessPieceSymbol(piece);
+    square.title = getChessSquareTitle(index, piece, legalMoves.has(index));
+    square.disabled = chessGame.ended || (chessGame.mode === "computer" && chessGame.turn === "b");
+    square.addEventListener("click", () => handleChessSquare(index));
+    board.append(square);
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "pass-time-actions";
+  const restartButton = document.createElement("button");
+  restartButton.type = "button";
+  restartButton.className = "time-game-next-button";
+  restartButton.textContent = "Nova partida";
+  restartButton.title = "Recomeçar xadrez";
+  restartButton.addEventListener("click", () => startChessGame(chessGame.mode));
+  const modeButton = document.createElement("button");
+  modeButton.type = "button";
+  modeButton.className = "time-game-next-button";
+  modeButton.textContent = "Trocar modo";
+  modeButton.title = "Escolher outro modo";
+  modeButton.addEventListener("click", openChessModeMenu);
+  const gamesButton = document.createElement("button");
+  gamesButton.type = "button";
+  gamesButton.className = "time-game-next-button";
+  gamesButton.textContent = "Jogos";
+  gamesButton.title = "Voltar para jogos";
+  gamesButton.addEventListener("click", openPassTimeMenu);
+  actions.append(restartButton, modeButton, gamesButton);
+
+  game.append(header, board, actions);
+  elements.editorEmpty.append(game);
+}
+
+function handleChessSquare(index) {
+  if (!chessGame.active || chessGame.ended || (chessGame.mode === "computer" && chessGame.turn === "b")) return;
+  const piece = chessGame.board[index];
+  const selected = chessGame.selected;
+  if (selected >= 0) {
+    const legalMoves = getChessLegalMoves(selected);
+    if (legalMoves.includes(index)) {
+      commitChessMove(selected, index);
+      return;
+    }
+    if (piece && getChessPieceColor(piece) === chessGame.turn) {
+      chessGame.selected = selected === index ? -1 : index;
+    } else {
+      chessGame.selected = -1;
+    }
+    renderEditor();
+    return;
+  }
+  if (piece && getChessPieceColor(piece) === chessGame.turn) {
+    chessGame.selected = index;
+    renderEditor();
+  }
+}
+
+function commitChessMove(from, to) {
+  const movingPiece = chessGame.board[from];
+  const capturedPiece = chessGame.board[to];
+  chessGame.board = moveChessPiece(chessGame.board, from, to);
+  chessGame.selected = -1;
+  if (capturedPiece && capturedPiece[1] === "k") {
+    chessGame.ended = true;
+    chessGame.winner = getChessPieceColor(movingPiece);
+    chessGame.status = `${getChessColorName(chessGame.winner, true)} venceram`;
+    renderEditor();
+    return;
+  }
+  chessGame.turn = chessGame.turn === "w" ? "b" : "w";
+  chessGame.status = chessGame.mode === "computer" && chessGame.turn === "b" ? "Computador pensando..." : `Vez das ${getChessColorName(chessGame.turn, true)}`;
+  renderEditor();
+  if (chessGame.mode === "computer" && chessGame.turn === "b" && !chessGame.ended) {
+    window.setTimeout(makeChessComputerMove, 360);
+  }
+}
+
+function makeChessComputerMove() {
+  if (!chessGame.active || chessGame.ended || chessGame.mode !== "computer" || chessGame.turn !== "b") return;
+  const move = chooseChessComputerMove(chessGame.board, "b");
+  if (!move) {
+    chessGame.ended = true;
+    chessGame.status = "Computador sem movimentos";
+    renderEditor();
+    return;
+  }
+  commitChessMove(move.from, move.to);
+}
+
+function chooseChessComputerMove(board, color) {
+  const moves = getAllChessMoves(board, color);
+  if (!moves.length) return null;
+  const captures = moves.filter((move) => board[move.to] && getChessPieceColor(board[move.to]) !== color);
+  if (captures.length && Math.random() < 0.28) {
+    return captures[Math.floor(Math.random() * captures.length)];
+  }
+  return moves[Math.floor(Math.random() * moves.length)];
+}
+
+function getAllChessMoves(board, color) {
+  const moves = [];
+  board.forEach((piece, index) => {
+    if (!piece || getChessPieceColor(piece) !== color) return;
+    getChessLegalMoves(index, board, color).forEach((to) => moves.push({ from: index, to }));
+  });
+  return moves;
+}
+
+function getChessLegalMoves(index, board = chessGame.board, turn = chessGame.turn) {
+  const piece = board[index];
+  if (!piece || getChessPieceColor(piece) !== turn) return [];
+  const color = getChessPieceColor(piece);
+  const type = piece[1];
+  const row = Math.floor(index / 8);
+  const col = index % 8;
+  const moves = [];
+
+  const addMove = (targetRow, targetCol, options = {}) => {
+    if (!isChessInside(targetRow, targetCol)) return false;
+    const targetIndex = targetRow * 8 + targetCol;
+    const target = board[targetIndex];
+    if (target && getChessPieceColor(target) === color) return false;
+    if (options.captureOnly && !target) return false;
+    if (options.moveOnly && target) return false;
+    moves.push(targetIndex);
+    return !target;
+  };
+
+  const slide = (directions) => {
+    directions.forEach(([rowDelta, colDelta]) => {
+      let targetRow = row + rowDelta;
+      let targetCol = col + colDelta;
+      while (isChessInside(targetRow, targetCol)) {
+        const canContinue = addMove(targetRow, targetCol);
+        if (!canContinue) break;
+        targetRow += rowDelta;
+        targetCol += colDelta;
+      }
+    });
+  };
+
+  if (type === "p") {
+    const direction = color === "w" ? -1 : 1;
+    const startRow = color === "w" ? 6 : 1;
+    const forwardRow = row + direction;
+    const forwardIndex = forwardRow * 8 + col;
+    if (isChessInside(forwardRow, col) && !board[forwardIndex]) {
+      moves.push(forwardIndex);
+      const doubleRow = row + direction * 2;
+      const doubleIndex = doubleRow * 8 + col;
+      if (row === startRow && isChessInside(doubleRow, col) && !board[doubleIndex]) {
+        moves.push(doubleIndex);
+      }
+    }
+    [-1, 1].forEach((colDelta) => {
+      const targetRow = row + direction;
+      const targetCol = col + colDelta;
+      if (!isChessInside(targetRow, targetCol)) return;
+      const targetIndex = targetRow * 8 + targetCol;
+      const target = board[targetIndex];
+      if (target && getChessPieceColor(target) !== color) moves.push(targetIndex);
+    });
+  } else if (type === "n") {
+    [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]].forEach(([rowDelta, colDelta]) => addMove(row + rowDelta, col + colDelta));
+  } else if (type === "b") {
+    slide([[-1, -1], [-1, 1], [1, -1], [1, 1]]);
+  } else if (type === "r") {
+    slide([[-1, 0], [1, 0], [0, -1], [0, 1]]);
+  } else if (type === "q") {
+    slide([[-1, -1], [-1, 1], [1, -1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]);
+  } else if (type === "k") {
+    [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]].forEach(([rowDelta, colDelta]) => addMove(row + rowDelta, col + colDelta));
+  }
+  return moves;
+}
+
+function moveChessPiece(board, from, to) {
+  const next = board.slice();
+  let piece = next[from];
+  next[from] = "";
+  const targetRow = Math.floor(to / 8);
+  if (piece[1] === "p" && (targetRow === 0 || targetRow === 7)) {
+    piece = `${piece[0]}q`;
+  }
+  next[to] = piece;
+  return next;
+}
+
+function isChessInside(row, col) {
+  return row >= 0 && row < 8 && col >= 0 && col < 8;
+}
+
+function getChessPieceColor(piece) {
+  return String(piece || "").charAt(0);
+}
+
+function getChessColorName(color, plural = false) {
+  if (color === "b") return plural ? "pretas" : "preta";
+  return plural ? "brancas" : "branca";
+}
+
+function getChessPieceSymbol(piece) {
+  const symbols = {
+    wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
+    bk: "♚", bq: "♛", br: "♜", bb: "♝", bn: "♞", bp: "♟",
+  };
+  return symbols[piece] || "";
+}
+
+function getChessPieceName(piece) {
+  const names = {
+    k: "rei",
+    q: "rainha",
+    r: "torre",
+    b: "bispo",
+    n: "cavalo",
+    p: "peão",
+  };
+  return piece ? `${names[piece[1]] || "peça"} ${getChessColorName(getChessPieceColor(piece))}` : "Casa vazia";
+}
+
+function getChessSquareTitle(index, piece, legal) {
+  const row = Math.floor(index / 8);
+  const col = index % 8;
+  const file = String.fromCharCode(97 + col);
+  const rank = 8 - row;
+  if (legal) return `Mover para ${file}${rank}`;
+  return piece ? `${getChessPieceName(piece)} em ${file}${rank}` : `Casa ${file}${rank}`;
+}
+
+function createNotisualState(difficulty = "normal") {
+  return {
+    active: false,
+    screen: "intro",
+    difficulty: NOTISUAL_DIFFICULTIES[difficulty] ? difficulty : "normal",
+    phaseOrder: [],
+    phaseIndex: 0,
+    phase: null,
+    timeLimit: 0,
+    timeLeft: 0,
+    deadline: 0,
+    timerId: 0,
+    countdownId: 0,
+    revealId: 0,
+    countdown: 3,
+    score: 0,
+    lastPoints: 0,
+    message: "",
+  };
+}
+
+function clearNotisualTimers() {
+  if (notisualGame?.timerId) window.clearInterval(notisualGame.timerId);
+  if (notisualGame?.countdownId) window.clearInterval(notisualGame.countdownId);
+  if (notisualGame?.revealId) window.clearTimeout(notisualGame.revealId);
+  if (notisualGame) {
+    notisualGame.timerId = 0;
+    notisualGame.countdownId = 0;
+    notisualGame.revealId = 0;
+  }
+}
+
+function openNotisualIntro() {
+  clearNotisualTimers();
+  selectedNoteId = null;
+  passTimeScreen = "notisual-intro";
+  timeGame.active = false;
+  ticTacToeGame = createTicTacToeState();
+  chessGame = createChessState();
+  notisualGame = createNotisualState(notisualGame.difficulty);
+  if (isMobileLayout()) showMobileScreen("game");
+  renderEditor();
+}
+
+function renderNotisualIntro() {
+  elements.editorEmpty.replaceChildren();
+  const section = document.createElement("section");
+  section.className = "notisual-game notisual-intro";
+  section.setAttribute("aria-label", "Introducao do Notisual");
+
+  const header = document.createElement("header");
+  header.className = "pass-time-header notisual-header";
+  header.innerHTML = "<h2>Notisual</h2><p>Você vai passar por fases rápidas: digitar frases, marcar checks, organizar cores, memorizar sequências e clicar números em ordem. Se o timer acabar, é game over.</p>";
+
+  const difficulty = document.createElement("div");
+  difficulty.className = "notisual-difficulty";
+  Object.entries(NOTISUAL_DIFFICULTIES).forEach(([key, config]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = key === notisualGame.difficulty ? "active" : "";
+    button.textContent = config.label;
+    button.title = `Dificuldade ${config.label}`;
+    button.addEventListener("click", () => {
+      notisualGame.difficulty = key;
+      renderEditor();
+    });
+    difficulty.append(button);
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "pass-time-actions notisual-intro-actions";
+  const readyButton = document.createElement("button");
+  readyButton.type = "button";
+  readyButton.className = "time-game-next-button notisual-ready";
+  readyButton.textContent = "Pronto";
+  readyButton.title = "Começar Notisual";
+  readyButton.addEventListener("click", startNotisualCountdown);
+  const backButton = document.createElement("button");
+  backButton.type = "button";
+  backButton.className = "time-game-next-button";
+  backButton.textContent = "Jogos";
+  backButton.title = "Voltar para jogos";
+  backButton.addEventListener("click", openPassTimeMenu);
+  actions.append(readyButton, backButton);
+
+  section.append(header, difficulty, actions);
+  elements.editorEmpty.append(section);
+}
+
+function startNotisualCountdown() {
+  clearNotisualTimers();
+  passTimeScreen = "notisual";
+  notisualGame = {
+    ...createNotisualState(notisualGame.difficulty),
+    active: true,
+    screen: "countdown",
+    countdown: 3,
+    phaseOrder: shuffleNotisualArray(NOTISUAL_PHASE_TYPES),
+  };
+  renderEditor();
+  notisualGame.countdownId = window.setInterval(() => {
+    notisualGame.countdown -= 1;
+    if (notisualGame.countdown <= 0) {
+      window.clearInterval(notisualGame.countdownId);
+      notisualGame.countdownId = 0;
+      startNotisualPhase(0);
+      return;
+    }
+    renderEditor();
+  }, 900);
+}
+
+function startNotisualPhase(index) {
+  clearNotisualTimers();
+  const type = notisualGame.phaseOrder[index];
+  if (!type) {
+    finishNotisualGame(true);
+    return;
+  }
+  notisualGame.screen = "playing";
+  notisualGame.phaseIndex = index;
+  notisualGame.phase = createNotisualPhase(type);
+  notisualGame.timeLimit = getNotisualPhaseLimit(type);
+  notisualGame.timeLeft = notisualGame.timeLimit;
+  notisualGame.deadline = Date.now() + notisualGame.timeLimit * 1000;
+  renderEditor();
+  if (type === "colors") {
+    const delay = Math.max(0, notisualGame.phase.revealUntil - Date.now() + 80);
+    notisualGame.revealId = window.setTimeout(() => {
+      notisualGame.revealId = 0;
+      if (passTimeScreen === "notisual" && notisualGame.phase?.type === "colors" && notisualGame.screen === "playing") {
+        renderEditor();
+      }
+    }, delay);
+  }
+  startNotisualTimer();
+}
+
+function createNotisualPhase(type) {
+  if (type === "typing") {
+    return { type, current: 0, phrases: shuffleNotisualArray(NOTISUAL_TYPED_PHRASES).slice(0, 3), value: "" };
+  }
+  if (type === "checks") {
+    return {
+      type,
+      items: Array.from({ length: 8 }, (_, index) => ({ id: cryptoId(), label: `Check ${index + 1}`, done: false, x: randomNotisualPosition(7, 82), y: randomNotisualPosition(12, 76) })),
+    };
+  }
+  if (type === "trash") {
+    return {
+      type,
+      draggedId: "",
+      papers: Array.from({ length: 6 }, () => ({ id: cryptoId(), done: false, x: randomNotisualPosition(8, 82), y: randomNotisualPosition(14, 72), rotate: Math.round(Math.random() * 34 - 17) })),
+    };
+  }
+  if (type === "folders") {
+    const colors = shuffleNotisualArray(NOTISUAL_COLOR_POOL).slice(0, 4);
+    return {
+      type,
+      selectedBlock: "",
+      colors,
+      blocks: shuffleNotisualArray(colors.map((color, index) => ({ id: cryptoId(), color, label: `Nota ${index + 1}`, placed: false }))),
+    };
+  }
+  if (type === "colors") {
+    return {
+      type,
+      sequence: shuffleNotisualArray(NOTISUAL_COLOR_POOL).slice(0, 5),
+      answer: [],
+      revealUntil: Date.now() + 2200,
+    };
+  }
+  return {
+    type: "numbers",
+    next: 1,
+    numbers: shuffleNotisualArray(Array.from({ length: 10 }, (_, index) => index + 1)).map((number) => ({ number, done: false, x: randomNotisualPosition(8, 82), y: randomNotisualPosition(12, 76) })),
+  };
+}
+
+function getNotisualPhaseLimit(type) {
+  const base = { typing: 35, checks: 12, trash: 16, folders: 18, colors: 15, numbers: 14 }[type] || 15;
+  const difficulty = NOTISUAL_DIFFICULTIES[notisualGame.difficulty] || NOTISUAL_DIFFICULTIES.normal;
+  return Math.max(6, Math.round(base * difficulty.multiplier));
+}
+
+function startNotisualTimer() {
+  notisualGame.timerId = window.setInterval(() => {
+    notisualGame.timeLeft = Math.max(0, (notisualGame.deadline - Date.now()) / 1000);
+    updateNotisualTimerDisplay();
+    if (notisualGame.timeLeft <= 0) {
+      finishNotisualGame(false, "Tempo esgotado");
+    }
+  }, 120);
+}
+
+function updateNotisualTimerDisplay() {
+  const seconds = elements.editorEmpty.querySelector("[data-notisual-seconds]");
+  const fill = elements.editorEmpty.querySelector("[data-notisual-fill]");
+  if (seconds) seconds.textContent = `${Math.ceil(notisualGame.timeLeft)}s`;
+  if (fill) fill.style.setProperty("--notisual-progress", `${Math.max(0, Math.min(100, (notisualGame.timeLeft / notisualGame.timeLimit) * 100))}%`);
+}
+
+function renderNotisualGame() {
+  elements.editorEmpty.replaceChildren();
+  if (notisualGame.screen === "countdown") {
+    renderNotisualCountdown();
+    return;
+  }
+  if (notisualGame.screen === "success" || notisualGame.screen === "gameover") {
+    renderNotisualResult();
+    return;
+  }
+  renderNotisualPhase();
+}
+
+function renderNotisualCountdown() {
+  const section = document.createElement("section");
+  section.className = "notisual-game notisual-countdown";
+  section.innerHTML = `<span>Notisual</span><strong>${notisualGame.countdown}</strong><p>Prepare os dedos.</p>`;
+  elements.editorEmpty.append(section);
+}
+
+function renderNotisualPhase() {
+  const phase = notisualGame.phase;
+  if (!phase) return;
+  const section = document.createElement("section");
+  section.className = `notisual-game notisual-playing notisual-${phase.type}`;
+  section.setAttribute("aria-label", "Fase do Notisual");
+  section.append(createNotisualTopbar());
+  const stage = document.createElement("div");
+  stage.className = "notisual-stage";
+  stage.append(createNotisualPhaseContent(phase));
+  section.append(stage);
+  elements.editorEmpty.append(section);
+  updateNotisualTimerDisplay();
+  if (phase.type === "typing") {
+    window.setTimeout(() => elements.editorEmpty.querySelector("[data-notisual-typing]")?.focus(), 0);
+  }
+}
+
+function createNotisualTopbar() {
+  const topbar = document.createElement("div");
+  topbar.className = "notisual-topbar";
+  const title = document.createElement("div");
+  title.innerHTML = `<span>Fase ${notisualGame.phaseIndex + 1}/${notisualGame.phaseOrder.length}</span><strong>${getNotisualPhaseTitle(notisualGame.phase?.type)}</strong>`;
+  const timer = document.createElement("div");
+  timer.className = "notisual-timer";
+  timer.title = "Tempo restante";
+  timer.innerHTML = '<span data-notisual-fill aria-hidden="true"></span><strong data-notisual-seconds></strong>';
+  const score = document.createElement("div");
+  score.className = "notisual-run-score";
+  score.innerHTML = `<span>Pontos</span><strong>${notisualGame.score}</strong>`;
+  topbar.append(title, timer, score);
+  return topbar;
+}
+
+function createNotisualPhaseContent(phase) {
+  if (phase.type === "typing") return createNotisualTypingPhase(phase);
+  if (phase.type === "checks") return createNotisualChecksPhase(phase);
+  if (phase.type === "trash") return createNotisualTrashPhase(phase);
+  if (phase.type === "folders") return createNotisualFoldersPhase(phase);
+  if (phase.type === "colors") return createNotisualColorsPhase(phase);
+  return createNotisualNumbersPhase(phase);
+}
+
+function createNotisualTypingPhase(phase) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "notisual-typing-box";
+  const phrase = phase.phrases[phase.current] || "";
+  wrapper.innerHTML = `<p>Digite a frase ${phase.current + 1} de 3:</p><strong>${escapeHtml(phrase)}</strong>`;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "notisual-input";
+  input.dataset.notisualTyping = "true";
+  input.value = phase.value || "";
+  input.placeholder = "Digite exatamente aqui";
+  input.addEventListener("input", (event) => handleNotisualTyping(event.target.value));
+  wrapper.append(input);
+  return wrapper;
+}
+
+function createNotisualChecksPhase(phase) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "notisual-free-stage";
+  phase.items.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "notisual-check";
+    button.classList.toggle("done", item.done);
+    button.style.left = `${item.x}%`;
+    button.style.top = `${item.y}%`;
+    button.title = "Marcar checklist";
+    button.textContent = item.done ? "✓" : "";
+    button.addEventListener("click", () => handleNotisualCheck(item.id));
+    wrapper.append(button);
+  });
+  return wrapper;
+}
+
+function createNotisualTrashPhase(phase) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "notisual-free-stage";
+  const trash = document.createElement("div");
+  trash.className = "notisual-trash";
+  trash.innerHTML = getNotisualTrashSvg();
+  trash.addEventListener("dragover", (event) => event.preventDefault());
+  trash.addEventListener("drop", (event) => {
+    event.preventDefault();
+    handleNotisualPaperToTrash(event.dataTransfer.getData("text/notisual-paper") || phase.draggedId);
+  });
+  wrapper.append(trash);
+  phase.papers.forEach((paper) => {
+    if (paper.done) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "notisual-paper";
+    button.draggable = true;
+    button.style.left = `${paper.x}%`;
+    button.style.top = `${paper.y}%`;
+    button.style.rotate = `${paper.rotate}deg`;
+    button.title = "Arrastar para a lixeira";
+    button.innerHTML = getNotisualAssetIcon("assets/notisual-paper.svg", "Papel amassado", "notisual-paper-icon");
+    button.addEventListener("dragstart", (event) => {
+      phase.draggedId = paper.id;
+      event.dataTransfer.setData("text/notisual-paper", paper.id);
+    });
+    button.addEventListener("click", () => handleNotisualPaperToTrash(paper.id));
+    wrapper.append(button);
+  });
+  return wrapper;
+}
+
+function createNotisualFoldersPhase(phase) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "notisual-folder-stage";
+  const blocks = document.createElement("div");
+  blocks.className = "notisual-block-pool";
+  phase.blocks.filter((block) => !block.placed).forEach((block) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "notisual-note-block";
+    button.classList.toggle("selected", phase.selectedBlock === block.id);
+    button.draggable = true;
+    button.style.setProperty("--notisual-color", block.color);
+    button.title = "Arrastar para a pasta da mesma cor";
+    button.addEventListener("click", () => {
+      phase.selectedBlock = phase.selectedBlock === block.id ? "" : block.id;
+      renderEditor();
+    });
+    button.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("text/notisual-block", block.id);
+      phase.selectedBlock = block.id;
+    });
+    blocks.append(button);
+  });
+  const folders = document.createElement("div");
+  folders.className = "notisual-folder-targets";
+  phase.colors.forEach((color) => {
+    const folder = document.createElement("button");
+    folder.type = "button";
+    folder.className = "notisual-folder-target";
+    folder.style.setProperty("--notisual-color", color);
+    folder.title = "Pasta colorida";
+    folder.setAttribute("aria-label", "Pasta colorida");
+    folder.innerHTML = getNotisualFolderSvg();
+    folder.addEventListener("dragover", (event) => event.preventDefault());
+    folder.addEventListener("drop", (event) => {
+      event.preventDefault();
+      handleNotisualFolderDrop(event.dataTransfer.getData("text/notisual-block"), color);
+    });
+    folder.addEventListener("click", () => handleNotisualFolderDrop(phase.selectedBlock, color));
+    folders.append(folder);
+  });
+  wrapper.append(blocks, folders);
+  return wrapper;
+}
+
+function getNotisualAssetIcon(src, alt, className) {
+  return `<img class="${className}" src="${src}" alt="${alt}" draggable="false">`;
+}
+
+function getNotisualTrashSvg() {
+  return getNotisualAssetIcon("assets/notisual-trash.svg", "Lixeira", "notisual-trash-icon");
+}
+
+function getNotisualFolderSvg() {
+  return `
+    <svg class="notisual-folder-icon" viewBox="0 0 21 21" aria-hidden="true" focusable="false">
+      <g fill="none" fill-rule="evenodd" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" transform="translate(3 4)">
+        <path d="m.5 1.5v9c0 1.1045695.8954305 2 2 2h10c1.1045695 0 2-.8954305 2-2v-6.00280762c.0007656-1.05436179-.8150774-1.91816512-1.8499357-1.99451426l-.1500643-.00468356-5 .00200544-2-2h-4c-.55228475 0-1 .44771525-1 1z"/>
+        <path d="m.5 2.5h7"/>
+      </g>
+    </svg>`;
+}
+
+function createNotisualColorsPhase(phase) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "notisual-color-stage";
+  const showing = Date.now() < phase.revealUntil;
+  const title = document.createElement("p");
+  title.textContent = showing ? "Memorize a ordem das cores." : "Clique nas cores na ordem certa.";
+  wrapper.append(title);
+  const sequence = document.createElement("div");
+  sequence.className = "notisual-color-memory";
+  phase.sequence.forEach((color, index) => {
+    const chip = document.createElement("span");
+    chip.style.setProperty("--notisual-color", showing ? color : "transparent");
+    chip.textContent = showing ? String(index + 1) : "";
+    sequence.append(chip);
+  });
+  wrapper.append(sequence);
+  const palette = document.createElement("div");
+  palette.className = "notisual-color-palette";
+  NOTISUAL_COLOR_POOL.forEach((color) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.style.setProperty("--notisual-color", color);
+    button.disabled = showing;
+    button.title = "Escolher cor";
+    button.addEventListener("click", () => handleNotisualColor(color));
+    palette.append(button);
+  });
+  wrapper.append(palette);
+  return wrapper;
+}
+
+function createNotisualNumbersPhase(phase) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "notisual-free-stage";
+  phase.numbers.forEach((item) => {
+    if (item.done) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "notisual-number";
+    button.style.left = `${item.x}%`;
+    button.style.top = `${item.y}%`;
+    button.textContent = item.number;
+    button.title = `Clicar no número ${item.number}`;
+    button.addEventListener("click", () => handleNotisualNumber(item.number));
+    wrapper.append(button);
+  });
+  const hint = document.createElement("span");
+  hint.className = "notisual-next-number";
+  hint.textContent = `Próximo: ${phase.next}`;
+  wrapper.append(hint);
+  return wrapper;
+}
+
+function handleNotisualTyping(value) {
+  const phase = notisualGame.phase;
+  if (phase?.type !== "typing") return;
+  phase.value = value;
+  const expected = phase.phrases[phase.current] || "";
+  if (normalizeNotisualText(value) !== normalizeNotisualText(expected)) return;
+  phase.current += 1;
+  phase.value = "";
+  if (phase.current >= phase.phrases.length) completeNotisualPhase();
+  else renderEditor();
+}
+
+function handleNotisualCheck(id) {
+  const phase = notisualGame.phase;
+  if (phase?.type !== "checks") return;
+  const item = phase.items.find((entry) => entry.id === id);
+  if (item) item.done = true;
+  if (phase.items.every((entry) => entry.done)) completeNotisualPhase();
+  else renderEditor();
+}
+
+function handleNotisualPaperToTrash(id) {
+  const phase = notisualGame.phase;
+  if (phase?.type !== "trash" || !id) return;
+  const paper = phase.papers.find((entry) => entry.id === id);
+  if (paper) paper.done = true;
+  if (phase.papers.every((entry) => entry.done)) completeNotisualPhase();
+  else renderEditor();
+}
+
+function handleNotisualFolderDrop(blockId, targetColor) {
+  const phase = notisualGame.phase;
+  if (phase?.type !== "folders" || !blockId) return;
+  const block = phase.blocks.find((entry) => entry.id === blockId);
+  if (!block) return;
+  if (block.color !== targetColor) {
+    phase.selectedBlock = "";
+    renderEditor();
+    showToast("Pasta errada");
+    return;
+  }
+  block.placed = true;
+  phase.selectedBlock = "";
+  if (phase.blocks.every((entry) => entry.placed)) completeNotisualPhase();
+  else renderEditor();
+}
+
+function handleNotisualColor(color) {
+  const phase = notisualGame.phase;
+  if (phase?.type !== "colors" || Date.now() < phase.revealUntil) return;
+  const expected = phase.sequence[phase.answer.length];
+  if (color !== expected) {
+    finishNotisualGame(false, "Sequência errada");
+    return;
+  }
+  phase.answer.push(color);
+  if (phase.answer.length >= phase.sequence.length) completeNotisualPhase();
+  else renderEditor();
+}
+
+function handleNotisualNumber(number) {
+  const phase = notisualGame.phase;
+  if (phase?.type !== "numbers") return;
+  if (number !== phase.next) {
+    finishNotisualGame(false, "Ordem errada");
+    return;
+  }
+  const item = phase.numbers.find((entry) => entry.number === number);
+  if (item) item.done = true;
+  phase.next += 1;
+  if (phase.next > 10) completeNotisualPhase();
+  else renderEditor();
+}
+
+function completeNotisualPhase() {
+  const bonus = Math.max(15, Math.round(notisualGame.timeLeft * 4));
+  notisualGame.score += bonus;
+  if (notisualGame.phaseIndex >= notisualGame.phaseOrder.length - 1) {
+    finishNotisualGame(true);
+    return;
+  }
+  startNotisualPhase(notisualGame.phaseIndex + 1);
+}
+
+function finishNotisualGame(won, message = "") {
+  clearNotisualTimers();
+  notisualGame.screen = won ? "success" : "gameover";
+  notisualGame.message = message;
+  if (won) {
+    const difficulty = NOTISUAL_DIFFICULTIES[notisualGame.difficulty] || NOTISUAL_DIFFICULTIES.normal;
+    notisualGame.lastPoints = awardNotisualPoints(notisualGame.score + difficulty.points);
+  }
+  renderEditor();
+}
+
+function renderNotisualResult() {
+  const won = notisualGame.screen === "success";
+  const section = document.createElement("section");
+  section.className = `notisual-game notisual-result ${won ? "success" : "gameover"}`;
+  const savedText = won
+    ? (getCurrentUser() ? `+${notisualGame.lastPoints} pontos salvos` : "Entre para salvar seus pontos")
+    : (notisualGame.message || "Game over");
+  section.innerHTML = `<span>Notisual</span><h2>${won ? "Concluído" : "Fim de jogo"}</h2><p>${escapeHtml(savedText)}</p><strong>${notisualGame.score} pontos na rodada</strong>`;
+  const actions = document.createElement("div");
+  actions.className = "pass-time-actions";
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "time-game-next-button";
+  retry.textContent = "Jogar de novo";
+  retry.title = "Recomeçar Notisual";
+  retry.addEventListener("click", startNotisualCountdown);
+  const games = document.createElement("button");
+  games.type = "button";
+  games.className = "time-game-next-button";
+  games.textContent = "Jogos";
+  games.title = "Voltar para jogos";
+  games.addEventListener("click", openPassTimeMenu);
+  actions.append(retry, games);
+  section.append(actions);
+  elements.editorEmpty.append(section);
+}
+
+function getNotisualPhaseTitle(type) {
+  return {
+    typing: "Frases rápidas",
+    checks: "Checklists soltos",
+    trash: "Papel na lixeira",
+    folders: "Pastas coloridas",
+    colors: "Memória de cores",
+    numbers: "Números em ordem",
+  }[type] || "Notisual";
+}
+
+function normalizeNotisualText(value) {
+  return removeDiacritics(value).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function randomNotisualPosition(min, max) {
+  return Math.round(min + Math.random() * (max - min));
+}
+
+function shuffleNotisualArray(items) {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const target = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[target]] = [copy[target], copy[index]];
+  }
+  return copy;
+}
+
 function createTimeGameState(options = {}) {
   return {
     active: Boolean(options.active),
@@ -4882,10 +5911,12 @@ function pickTimeGameWord(previousSolution = "") {
 }
 
 function openTimeGame() {
+  clearNotisualTimers();
   const previousSolution = timeGame.solution;
   selectedNoteId = null;
   passTimeScreen = "time";
   ticTacToeGame = createTicTacToeState();
+  chessGame = createChessState();
   timeGame = createTimeGameState({ active: true, previousSolution });
   renderNotes();
   if (isMobileLayout()) {
@@ -5220,6 +6251,20 @@ function awardTimeGamePoints(points) {
   const safePoints = normalizeNumber(points, 0);
   if (!user || !safePoints) return 0;
   user.timeGameScore = normalizeNumber(user.timeGameScore, 0) + safePoints;
+  user.updatedAt = Date.now();
+  saveUsers();
+  return safePoints;
+}
+
+function getNotisualScore() {
+  return normalizeNumber(getCurrentUser()?.notisualScore, 0);
+}
+
+function awardNotisualPoints(points) {
+  const user = getCurrentUser();
+  const safePoints = normalizeNumber(points, 0);
+  if (!user || !safePoints) return 0;
+  user.notisualScore = normalizeNumber(user.notisualScore, 0) + safePoints;
   user.updatedAt = Date.now();
   saveUsers();
   return safePoints;
@@ -7486,6 +8531,7 @@ function loadUsers() {
           password: typeof user.password === "string" ? user.password : "",
           photo: typeof user.photo === "string" ? user.photo : "",
           timeGameScore: normalizeNumber(user.timeGameScore, 0),
+          notisualScore: normalizeNumber(user.notisualScore, 0),
           createdAt: Number.isFinite(user.createdAt) ? user.createdAt : Date.now(),
           updatedAt: Number.isFinite(user.updatedAt) ? user.updatedAt : Date.now(),
         };
@@ -7603,7 +8649,7 @@ function handleSignup(event) {
   }
 
   const now = Date.now();
-  const user = { id: cryptoId(), name, username, email, phone, phoneCountry, password, photo: currentSignupPhoto, timeGameScore: 0, createdAt: now, updatedAt: now };
+  const user = { id: cryptoId(), name, username, email, phone, phoneCountry, password, photo: currentSignupPhoto, timeGameScore: 0, notisualScore: 0, createdAt: now, updatedAt: now };
   users.push(user);
   currentUserId = user.id;
   localStorage.setItem(CURRENT_USER_KEY, currentUserId);
