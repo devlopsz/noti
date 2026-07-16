@@ -7,6 +7,11 @@ const FIRST_VISIT_KEY = "noti-first-visit-seen-v1";
 const SUPABASE_URL = "https://jzryqqmaumsuxmfgfmtq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6cnlxcW1hdW1zdXhtZmdmbXRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTg2MjMsImV4cCI6MjA5OTc5NDYyM30.SzRZ8a64UZrtcXEdtMNfCMUzEgWrPCZl6LMUN18wvo4";
 const CLOUD_DATA_TABLE = "noti_user_data";
+const CLOUD_CHUNK_TABLE = "noti_user_data_chunks";
+const CLOUD_CHUNK_MARKER = "__notiChunkedAppState";
+const CLOUD_CHUNK_MIN_LENGTH = 400000;
+const CLOUD_CHUNK_SIZE = 160000;
+const CLOUD_CHUNK_BATCH_SIZE = 4;
 const CLOUD_SYNC_DEBOUNCE_MS = 1800;
 const BACKUP_TYPE = "noti-backup";
 const BACKUP_VERSION = 1;
@@ -1345,16 +1350,9 @@ function upsertLocalUserFromCloudUser(supabaseUser, draft = {}) {
 
 async function loadCloudSnapshotForCurrentUser() {
   if (!cloudSessionUserId) return;
-  const client = getSupabaseClient();
-  if (!client) return;
 
   try {
-    const { data, error } = await client
-      .from(CLOUD_DATA_TABLE)
-      .select("user_id,email,profile,app_state,preferences,updated_at,version")
-      .eq("user_id", cloudSessionUserId)
-      .maybeSingle();
-    if (error) throw error;
+    const data = await fetchCloudSnapshotForCurrentUser({ skipSessionCheck: true });
 
     cloudInitialSyncDone = true;
     if (!data) {
@@ -1486,10 +1484,10 @@ async function syncCloudDataManually() {
   }
 }
 
-async function fetchCloudSnapshotForCurrentUser() {
+async function fetchCloudSnapshotForCurrentUser(options = {}) {
   const client = getSupabaseClient();
   if (!client || !cloudSessionUserId) return null;
-  await ensureCloudSession();
+  if (!options.skipSessionCheck) await ensureCloudSession();
   if (!cloudSessionUserId) return null;
   const { data, error } = await client
     .from(CLOUD_DATA_TABLE)
@@ -1497,7 +1495,11 @@ async function fetchCloudSnapshotForCurrentUser() {
     .eq("user_id", cloudSessionUserId)
     .maybeSingle();
   if (error) throw error;
-  return data || null;
+  if (!data) return null;
+  if (isChunkedCloudAppState(data.app_state)) {
+    data.app_state = await fetchCloudStateChunks(client, cloudSessionUserId, data.app_state);
+  }
+  return data;
 }
 
 function setProfileCloudButtonsBusy(busy) {
@@ -1526,11 +1528,20 @@ async function saveCloudSnapshotNow(options = {}) {
 
   cloudSyncSaving = true;
   try {
+    const appState = clonePlainData(state);
+    const appStateJson = JSON.stringify(appState);
+    const appStateForCloud = appStateJson.length > CLOUD_CHUNK_MIN_LENGTH
+      ? await saveCloudStateChunks(client, cloudSessionUserId, appStateJson)
+      : appState;
+    if (!isChunkedCloudAppState(appStateForCloud)) {
+      await clearCloudStateChunks(client, cloudSessionUserId);
+    }
+
     const payload = {
       user_id: cloudSessionUserId,
       email: user.email,
       profile: buildCloudProfile(user),
-      app_state: clonePlainData(state),
+      app_state: appStateForCloud,
       preferences: clonePlainData(preferences),
       version: BACKUP_VERSION,
       updated_at: new Date().toISOString(),
@@ -1552,6 +1563,86 @@ async function saveCloudSnapshotNow(options = {}) {
       scheduleCloudSync("Finalizando sincronização...");
     }
   }
+}
+
+function isChunkedCloudAppState(value) {
+  return Boolean(value && typeof value === "object" && value[CLOUD_CHUNK_MARKER]);
+}
+
+function splitCloudText(value) {
+  const text = String(value || "");
+  const chunks = [];
+  for (let index = 0; index < text.length; index += CLOUD_CHUNK_SIZE) {
+    chunks.push(text.slice(index, index + CLOUD_CHUNK_SIZE));
+  }
+  return chunks.length ? chunks : [""];
+}
+
+async function saveCloudStateChunks(client, userId, appStateJson) {
+  const chunks = splitCloudText(appStateJson);
+  const updatedAt = new Date().toISOString();
+  for (let index = 0; index < chunks.length; index += CLOUD_CHUNK_BATCH_SIZE) {
+    const rows = chunks.slice(index, index + CLOUD_CHUNK_BATCH_SIZE).map((chunk, offset) => ({
+      user_id: userId,
+      chunk_index: index + offset,
+      chunk_data: chunk,
+      updated_at: updatedAt,
+    }));
+    const { error } = await client
+      .from(CLOUD_CHUNK_TABLE)
+      .upsert(rows, { onConflict: "user_id,chunk_index" });
+    if (error) throw error;
+  }
+
+  const { error: cleanupError } = await client
+    .from(CLOUD_CHUNK_TABLE)
+    .delete()
+    .eq("user_id", userId)
+    .gte("chunk_index", chunks.length);
+  if (cleanupError) throw cleanupError;
+
+  return {
+    [CLOUD_CHUNK_MARKER]: true,
+    chunkCount: chunks.length,
+    chunkSize: CLOUD_CHUNK_SIZE,
+    textLength: appStateJson.length,
+    updatedAt,
+  };
+}
+
+async function clearCloudStateChunks(client, userId) {
+  const { error } = await client
+    .from(CLOUD_CHUNK_TABLE)
+    .delete()
+    .eq("user_id", userId);
+  if (error && !isCloudMissingChunksError(error)) throw error;
+}
+
+async function fetchCloudStateChunks(client, userId, marker) {
+  const expectedCount = Math.max(0, Number(marker?.chunkCount || 0));
+  const { data, error } = await client
+    .from(CLOUD_CHUNK_TABLE)
+    .select("chunk_index,chunk_data")
+    .eq("user_id", userId)
+    .order("chunk_index", { ascending: true });
+  if (error) throw error;
+
+  const chunks = Array.isArray(data) ? data : [];
+  if (expectedCount && chunks.length < expectedCount) {
+    throw new Error("Backup em nuvem incompleto. Clique em Salvar dados novamente no aparelho principal.");
+  }
+
+  const orderedText = chunks
+    .slice(0, expectedCount || chunks.length)
+    .sort((first, second) => normalizeNumber(first.chunk_index, 0) - normalizeNumber(second.chunk_index, 0))
+    .map((chunk) => String(chunk.chunk_data || ""))
+    .join("");
+  return JSON.parse(orderedText || "{}");
+}
+
+function isCloudMissingChunksError(error) {
+  const text = [error?.code, error?.message, error?.details, error?.hint].filter(Boolean).join(" ");
+  return /noti_user_data_chunks|schema cache|relation/i.test(text);
 }
 
 function buildCloudProfile(user) {
@@ -1593,6 +1684,9 @@ function getCloudSyncErrorMessage(error) {
   const normalized = combined.toLowerCase();
 
   if (!navigator.onLine) return "Sem internet. Alterações salvas neste aparelho.";
+  if (/noti_user_data_chunks/i.test(combined)) {
+    return "Rode o SQL atualizado do Noti no Supabase para salvar notas grandes.";
+  }
   if (code === "42P01" || code === "PGRST205" || /noti_user_data|schema cache|relation/i.test(combined)) {
     return "Crie a tabela noti_user_data no Supabase para ativar a nuvem.";
   }
@@ -1607,6 +1701,9 @@ function getCloudSyncErrorMessage(error) {
   }
   if (status === 413 || /payload|too large|request entity too large|maximum size/i.test(normalized)) {
     return "Dados grandes demais para salvar agora. Remova anexos muito pesados ou divida as imagens.";
+  }
+  if (/failed to fetch|networkerror|load failed|fetch failed/i.test(normalized)) {
+    return "Falha de conexão com a nuvem. Recarregue, confira a internet e tente pelo link do GitHub Pages.";
   }
   if (/invalid input syntax for type uuid|foreign key|violates foreign key/i.test(combined)) {
     return "A conta da nuvem ficou inconsistente. Saia e entre novamente.";
