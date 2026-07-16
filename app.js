@@ -579,6 +579,8 @@ const elements = {
   settingsCountrySelect: $("#settingsCountrySelect"),
   profileStatus: $("#profileStatus"),
   profileLoginButton: $("#profileLoginButton"),
+  profileSaveCloudButton: $("#profileSaveCloudButton"),
+  profileSyncCloudButton: $("#profileSyncCloudButton"),
   saveProfileButton: $("#saveProfileButton"),
   profileEditDialog: $("#profileEditDialog"),
   cancelProfileEditButton: $("#cancelProfileEditButton"),
@@ -634,7 +636,9 @@ function init() {
   setupAutoTooltips();
   setupPagesUpdateChecker();
   initializeCloudAuth();
-  window.addEventListener("online", () => scheduleCloudSync("Reconectado. Sincronizando..."));
+  window.addEventListener("online", () => {
+    if (cloudSessionUserId) setCloudSyncStatus("dirty", "Conectado. Clique em Salvar dados para enviar alterações.");
+  });
   localStorage.setItem(FIRST_VISIT_KEY, "true");
 }
 
@@ -673,6 +677,8 @@ function bindEvents() {
     button.addEventListener("click", () => setActiveSettingsTab(button.dataset.settingsTab));
   });
   elements.profileLoginButton.addEventListener("click", openProfileAccountEntry);
+  elements.profileSaveCloudButton?.addEventListener("click", saveCloudDataManually);
+  elements.profileSyncCloudButton?.addEventListener("click", syncCloudDataManually);
   elements.editProfileButton.addEventListener("click", openProfileEditDialog);
   elements.cancelProfileEditButton.addEventListener("click", closeProfileEditDialog);
   elements.saveProfileButton.addEventListener("click", saveProfileSettings);
@@ -1210,7 +1216,7 @@ function normalizeState(rawState) {
 
 function saveState(options = {}) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (options.sync !== false) scheduleCloudSync("Notas salvas. Sincronizando...");
+  if (options.sync !== false) markCloudDataDirty("Alterações locais salvas. Clique em Salvar dados para enviar à nuvem.");
 }
 
 function getSupabaseClient() {
@@ -1324,14 +1330,12 @@ async function loadCloudSnapshotForCurrentUser() {
 
     cloudInitialSyncDone = true;
     if (!data) {
-      await saveCloudSnapshotNow({ force: true });
-      setCloudSyncStatus("synced", "Sincronização em nuvem ativada.");
+      setCloudSyncStatus("dirty", "Nenhum dado salvo na nuvem. Clique em Salvar dados neste aparelho.");
       return;
     }
 
-    applyCloudSnapshot(data);
-    await saveCloudSnapshotNow({ force: true });
-    setCloudSyncStatus("synced", "Sincronizado com a nuvem.");
+    applyCloudSnapshot(data, { mergeLocal: true });
+    setCloudSyncStatus("synced", "Últimos dados salvos carregados da nuvem.");
   } catch (error) {
     console.warn("Não foi possível carregar dados da nuvem.", error);
     cloudInitialSyncDone = true;
@@ -1339,7 +1343,7 @@ async function loadCloudSnapshotForCurrentUser() {
   }
 }
 
-function applyCloudSnapshot(snapshot) {
+function applyCloudSnapshot(snapshot, options = {}) {
   const cloudState = normalizeState(snapshot?.app_state || {});
   const cloudPreferences = normalizePreferencesData(snapshot?.preferences || {}, preferences);
   const user = getCurrentUser();
@@ -1356,8 +1360,9 @@ function applyCloudSnapshot(snapshot) {
     user.updatedAt = Date.now();
   }
 
+  const shouldMergeLocal = options.mergeLocal !== false;
   const hasLocalStateNow = Boolean(localStorage.getItem(STORAGE_KEY));
-  const nextState = hasLocalStateNow && state.notes.length
+  const nextState = shouldMergeLocal && hasLocalStateNow && state.notes.length
     ? buildBackupMerge(cloudState).state
     : cloudState;
 
@@ -1376,15 +1381,88 @@ function applyCloudSnapshot(snapshot) {
   render();
 }
 
+function markCloudDataDirty(message) {
+  const user = getCurrentUser();
+  if (!user || cloudSessionUserId !== user.id || !cloudInitialSyncDone) return;
+  setCloudSyncStatus("dirty", message || "Dados alterados neste aparelho. Clique em Salvar dados.");
+}
+
+function canUseCloudActions() {
+  const user = getCurrentUser();
+  return Boolean(user && cloudSessionUserId === user.id && getSupabaseClient());
+}
+
+async function saveCloudDataManually() {
+  if (!canUseCloudActions()) {
+    showToast("Entre com sua conta para salvar na nuvem");
+    openAccountModal("login");
+    return;
+  }
+
+  setProfileCloudButtonsBusy(true);
+  setCloudSyncStatus("syncing", "Salvando dados na nuvem...");
+  try {
+    await saveCloudSnapshotNow({ force: true, manual: true });
+    showToast("Dados salvos na nuvem");
+  } catch (error) {
+    console.warn("Salvar dados na nuvem falhou.", error);
+    showToast(getCloudSyncErrorMessage(error));
+  } finally {
+    setProfileCloudButtonsBusy(false);
+    renderSettingsIfOpen();
+  }
+}
+
+async function syncCloudDataManually() {
+  if (!canUseCloudActions()) {
+    showToast("Entre com sua conta para sincronizar");
+    openAccountModal("login");
+    return;
+  }
+
+  const shouldSync = confirm("Sincronizar com a última versão salva na nuvem? Os dados deste aparelho serão atualizados pelo último Salvar dados.");
+  if (!shouldSync) return;
+
+  setProfileCloudButtonsBusy(true);
+  setCloudSyncStatus("syncing", "Baixando dados salvos na nuvem...");
+  try {
+    const snapshot = await fetchCloudSnapshotForCurrentUser();
+    if (!snapshot) {
+      setCloudSyncStatus("dirty", "Nenhum dado salvo na nuvem ainda. Clique em Salvar dados no aparelho principal.");
+      showToast("Nenhum dado salvo na nuvem");
+      return;
+    }
+    applyCloudSnapshot(snapshot, { mergeLocal: false });
+    setCloudSyncStatus("synced", "Dados sincronizados com a última versão salva.");
+    showToast("Dados sincronizados");
+  } catch (error) {
+    console.warn("Sincronizar dados falhou.", error);
+    showToast(getCloudSyncErrorMessage(error));
+  } finally {
+    setProfileCloudButtonsBusy(false);
+    renderSettingsIfOpen();
+  }
+}
+
+async function fetchCloudSnapshotForCurrentUser() {
+  const client = getSupabaseClient();
+  if (!client || !cloudSessionUserId) return null;
+  const { data, error } = await client
+    .from(CLOUD_DATA_TABLE)
+    .select("user_id,email,profile,app_state,preferences,updated_at,version")
+    .eq("user_id", cloudSessionUserId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+function setProfileCloudButtonsBusy(busy) {
+  if (elements.profileSaveCloudButton) elements.profileSaveCloudButton.disabled = Boolean(busy);
+  if (elements.profileSyncCloudButton) elements.profileSyncCloudButton.disabled = Boolean(busy);
+}
+
 function scheduleCloudSync(message = "Sincronizando...") {
-  if (!cloudSessionUserId || !cloudInitialSyncDone || !navigator.onLine) return;
-  setCloudSyncStatus("syncing", message);
-  window.clearTimeout(cloudSyncTimer);
-  cloudSyncTimer = window.setTimeout(() => {
-    saveCloudSnapshotNow().catch((error) => {
-      console.warn("Falha ao sincronizar.", error);
-    });
-  }, CLOUD_SYNC_DEBOUNCE_MS);
+  markCloudDataDirty(message || "Dados alterados neste aparelho. Clique em Salvar dados.");
 }
 
 async function saveCloudSnapshotNow(options = {}) {
@@ -8356,7 +8434,7 @@ function loadPreferences() {
 
 function savePreferences(options = {}) {
   localStorage.setItem(PREFS_KEY, JSON.stringify(preferences));
-  if (options.sync !== false) scheduleCloudSync("Preferências salvas. Sincronizando...");
+  if (options.sync !== false) markCloudDataDirty("Preferências salvas neste aparelho. Clique em Salvar dados para enviar à nuvem.");
 }
 
 function applyPreferences() {
@@ -8877,7 +8955,7 @@ function loadUsers() {
 }
 function saveUsers(options = {}) {
   localStorage.setItem(USER_STORE_KEY, JSON.stringify(users));
-  if (options.sync !== false) scheduleCloudSync("Perfil salvo. Sincronizando...");
+  if (options.sync !== false) markCloudDataDirty("Perfil salvo neste aparelho. Clique em Salvar dados para enviar à nuvem.");
 }
 
 function getCurrentUser() {
@@ -9143,6 +9221,16 @@ function renderSettingsProfile() {
   elements.profileStatus.textContent = getProfileStatusText(user);
   elements.profileStatus.dataset.syncTone = cloudSyncStatus.tone;
   elements.profileLoginButton.hidden = Boolean(user);
+  if (elements.profileSaveCloudButton) {
+    elements.profileSaveCloudButton.hidden = !user;
+    elements.profileSaveCloudButton.disabled = Boolean(user && cloudSessionUserId !== user.id);
+    elements.profileSaveCloudButton.title = cloudSessionUserId === user?.id ? "Salvar dados deste aparelho na nuvem" : "Entre com a conta em nuvem para salvar";
+  }
+  if (elements.profileSyncCloudButton) {
+    elements.profileSyncCloudButton.hidden = !user;
+    elements.profileSyncCloudButton.disabled = Boolean(user && cloudSessionUserId !== user.id);
+    elements.profileSyncCloudButton.title = cloudSessionUserId === user?.id ? "Baixar última versão salva na nuvem" : "Entre com a conta em nuvem para sincronizar";
+  }
   elements.editProfileButton.hidden = !user;
   elements.logoutButton.hidden = !user;
 }

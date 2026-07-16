@@ -5538,8 +5538,26 @@ body.notes-selection-mode .note-card:nth-of-type(2n) {
   color: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
 }
 
+.profile-dashboard .settings-status[data-sync-tone="dirty"] {
+  color: color-mix(in srgb, var(--accent) 58%, var(--text-muted));
+}
+
 .profile-dashboard .settings-status[data-sync-tone="error"] {
   color: #ff3b30;
+}
+
+.profile-cloud-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.profile-cloud-actions button {
+  min-width: 140px;
+  border-radius: 999px;
+  font-weight: 520;
 }
 
 .mac-settings-card {
