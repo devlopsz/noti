@@ -9,9 +9,10 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const CLOUD_DATA_TABLE = "noti_user_data";
 const CLOUD_CHUNK_TABLE = "noti_user_data_chunks";
 const CLOUD_CHUNK_MARKER = "__notiChunkedAppState";
-const CLOUD_CHUNK_MIN_LENGTH = 400000;
-const CLOUD_CHUNK_SIZE = 160000;
-const CLOUD_CHUNK_BATCH_SIZE = 4;
+const CLOUD_CHUNK_MIN_LENGTH = 90000;
+const CLOUD_CHUNK_SIZE = 45000;
+const CLOUD_CHUNK_BATCH_SIZE = 1;
+const CLOUD_REQUEST_RETRIES = 2;
 const CLOUD_SYNC_DEBOUNCE_MS = 1800;
 const BACKUP_TYPE = "noti-backup";
 const BACKUP_VERSION = 1;
@@ -1489,11 +1490,11 @@ async function fetchCloudSnapshotForCurrentUser(options = {}) {
   if (!client || !cloudSessionUserId) return null;
   if (!options.skipSessionCheck) await ensureCloudSession();
   if (!cloudSessionUserId) return null;
-  const { data, error } = await client
+  const { data, error } = await runCloudRequest(() => client
     .from(CLOUD_DATA_TABLE)
     .select("user_id,email,profile,app_state,preferences,updated_at,version")
     .eq("user_id", cloudSessionUserId)
-    .maybeSingle();
+    .maybeSingle());
   if (error) throw error;
   if (!data) return null;
   if (isChunkedCloudAppState(data.app_state)) {
@@ -1546,9 +1547,9 @@ async function saveCloudSnapshotNow(options = {}) {
       version: BACKUP_VERSION,
       updated_at: new Date().toISOString(),
     };
-    const { error } = await client
+    const { error } = await runCloudRequest(() => client
       .from(CLOUD_DATA_TABLE)
-      .upsert(payload, { onConflict: "user_id" });
+      .upsert(payload, { onConflict: "user_id" }));
     if (error) throw error;
     setCloudSyncStatus("synced", "Sincronizado com a nuvem.");
     return true;
@@ -1588,17 +1589,17 @@ async function saveCloudStateChunks(client, userId, appStateJson) {
       chunk_data: chunk,
       updated_at: updatedAt,
     }));
-    const { error } = await client
+    const { error } = await runCloudRequest(() => client
       .from(CLOUD_CHUNK_TABLE)
-      .upsert(rows, { onConflict: "user_id,chunk_index" });
+      .upsert(rows, { onConflict: "user_id,chunk_index" }));
     if (error) throw error;
   }
 
-  const { error: cleanupError } = await client
+  const { error: cleanupError } = await runCloudRequest(() => client
     .from(CLOUD_CHUNK_TABLE)
     .delete()
     .eq("user_id", userId)
-    .gte("chunk_index", chunks.length);
+    .gte("chunk_index", chunks.length));
   if (cleanupError) throw cleanupError;
 
   return {
@@ -1611,20 +1612,20 @@ async function saveCloudStateChunks(client, userId, appStateJson) {
 }
 
 async function clearCloudStateChunks(client, userId) {
-  const { error } = await client
+  const { error } = await runCloudRequest(() => client
     .from(CLOUD_CHUNK_TABLE)
     .delete()
-    .eq("user_id", userId);
+    .eq("user_id", userId));
   if (error && !isCloudMissingChunksError(error)) throw error;
 }
 
 async function fetchCloudStateChunks(client, userId, marker) {
   const expectedCount = Math.max(0, Number(marker?.chunkCount || 0));
-  const { data, error } = await client
+  const { data, error } = await runCloudRequest(() => client
     .from(CLOUD_CHUNK_TABLE)
     .select("chunk_index,chunk_data")
     .eq("user_id", userId)
-    .order("chunk_index", { ascending: true });
+    .order("chunk_index", { ascending: true }));
   if (error) throw error;
 
   const chunks = Array.isArray(data) ? data : [];
@@ -1643,6 +1644,35 @@ async function fetchCloudStateChunks(client, userId, marker) {
 function isCloudMissingChunksError(error) {
   const text = [error?.code, error?.message, error?.details, error?.hint].filter(Boolean).join(" ");
   return /noti_user_data_chunks|schema cache|relation/i.test(text);
+}
+
+async function runCloudRequest(requestFactory, retries = CLOUD_REQUEST_RETRIES) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const result = await requestFactory();
+      if (result?.error && isTransientCloudFetchError(result.error) && attempt < retries) {
+        lastError = result.error;
+        await wait(500 + attempt * 700);
+        continue;
+      }
+      return result;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientCloudFetchError(error) || attempt >= retries) throw error;
+      await wait(500 + attempt * 700);
+    }
+  }
+  throw lastError;
+}
+
+function isTransientCloudFetchError(error) {
+  const text = [error?.message, error?.name, error?.code].filter(Boolean).join(" ");
+  return /failed to fetch|networkerror|load failed|fetch failed/i.test(text);
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function buildCloudProfile(user) {
@@ -1703,7 +1733,10 @@ function getCloudSyncErrorMessage(error) {
     return "Dados grandes demais para salvar agora. Remova anexos muito pesados ou divida as imagens.";
   }
   if (/failed to fetch|networkerror|load failed|fetch failed/i.test(normalized)) {
-    return "Falha de conexão com a nuvem. Recarregue, confira a internet e tente pelo link do GitHub Pages.";
+    if (window.location.protocol === "file:") {
+      return "Abra pelo GitHub Pages para sincronizar na nuvem. O arquivo local pode bloquear o Supabase.";
+    }
+    return "Falha de conexão com a nuvem. Recarregue, desative bloqueadores para Supabase e tente salvar novamente.";
   }
   if (/invalid input syntax for type uuid|foreign key|violates foreign key/i.test(combined)) {
     return "A conta da nuvem ficou inconsistente. Saia e entre novamente.";
