@@ -27,6 +27,8 @@ const CLOUD_SYNC_DEBOUNCE_MS = 1800;
 const BACKUP_TYPE = "noti-backup";
 const BACKUP_VERSION = 1;
 const MAX_ATTACHMENT_BYTES = 2.5 * 1024 * 1024;
+const PROFILE_PHOTO_SIZE = 320;
+const MAX_LOCAL_PROFILE_PHOTO_CHARS = 180000;
 const PAGES_UPDATE_ASSETS = ["index.html", "app.js", "styles.css"];
 const PAGES_UPDATE_CHECK_INTERVAL = 120000;
 const DEFAULT_TOOLBAR_ITEMS = ["theme", "separator-main", "attach", "draw", "drawingBlock", "checklistBlock", "pin", "archive", "delete", "restore", "search", "settings", "account"];
@@ -2397,6 +2399,12 @@ function formatCloudErrorDetail(text) {
 function getAuthErrorMessage(error) {
   const rawMessage = String(error?.message || error?.error_description || error?.details || "").trim();
   const message = rawMessage.toLowerCase();
+  const retryMatch = message.match(/after\s+(\d+)\s+seconds?/i);
+  const status = Number(error?.status || error?.statusCode || 0);
+  if (retryMatch || status === 429 || message.includes("for security purposes")) {
+    const seconds = Math.max(1, normalizeNumber(retryMatch?.[1], 20));
+    return `Aguarde ${seconds} segundos antes de tentar novamente.`;
+  }
   if (message.includes("already registered") || message.includes("already exists")) return "Esse e-mail já tem conta. Tente entrar.";
   if (message.includes("invalid login") || message.includes("invalid credentials")) return "E-mail ou senha incorretos.";
   if (message.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar ou solicite um novo link.";
@@ -9817,8 +9825,30 @@ function loadUsers() {
   }
 }
 function saveUsers(options = {}) {
-  localStorage.setItem(USER_STORE_KEY, JSON.stringify(users));
+  const fullPayload = JSON.stringify(users);
+  const withoutLargePhotos = JSON.stringify(users.map((user) => ({
+    ...user,
+    photo: String(user.photo || "").length > MAX_LOCAL_PROFILE_PHOTO_CHARS ? "" : user.photo,
+  })));
+  const withoutPhotos = JSON.stringify(users.map((user) => ({ ...user, photo: "" })));
+  const payloads = [...new Set([fullPayload, withoutLargePhotos, withoutPhotos])];
+  let saved = false;
+  let lastError = null;
+
+  for (let index = 0; index < payloads.length; index += 1) {
+    try {
+      localStorage.setItem(USER_STORE_KEY, payloads[index]);
+      saved = true;
+      if (index > 0) console.warn("Armazenamento local cheio. O perfil foi salvo sem uma foto grande.");
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (!saved) console.warn("Não foi possível salvar o perfil neste navegador.", lastError);
   if (options.sync !== false) markCloudDataDirty("Perfil salvo neste aparelho. Clique em Salvar dados para enviar à nuvem.");
+  return saved;
 }
 
 function getCurrentUser() {
@@ -9902,8 +9932,13 @@ async function handleSignupPhoto() {
     showToast(`Foto acima de ${formatFileSize(MAX_ATTACHMENT_BYTES)} ignorada`);
     return;
   }
-  currentSignupPhoto = await readFileAsDataUrl(file);
-  renderAvatar(elements.signupPhotoPreview, { photo: currentSignupPhoto });
+  try {
+    currentSignupPhoto = await readProfilePhotoAsDataUrl(file);
+    renderAvatar(elements.signupPhotoPreview, { photo: currentSignupPhoto });
+  } catch (error) {
+    console.warn("Não foi possível processar a foto de cadastro.", error);
+    showToast("Não foi possível processar essa foto");
+  }
 }
 
 async function handleSignup(event) {
@@ -9927,8 +9962,9 @@ async function handleSignup(event) {
       submitButton.disabled = true;
       submitButton.textContent = "Criando...";
     }
+    let data = null;
     try {
-      const { data, error } = await client.auth.signUp({
+      const result = await client.auth.signUp({
         email,
         password,
         options: {
@@ -9936,27 +9972,8 @@ async function handleSignup(event) {
           emailRedirectTo: AUTH_REDIRECT_URL,
         },
       });
-      if (error) throw error;
-
-      if (data?.user) {
-        upsertLocalUserFromCloudUser(data.user, { name, username, email, phone, phoneCountry, photo: currentSignupPhoto });
-        saveUsers({ sync: false });
-      }
-
-      elements.signupForm.reset();
-      elements.signupUsernameInput.value = "@";
-      elements.signupCountrySelect.value = "BR";
-      currentSignupPhoto = "";
-      renderAvatar(elements.signupPhotoPreview, null);
-      refreshAccountUi();
-      closeModals();
-      if (data?.session) {
-        await handleCloudSession(data.session);
-        showToast("Conta criada e sincronização ativada");
-      } else {
-        showToast("Conta criada. Confirme o e-mail se o Supabase solicitar.");
-      }
-      return;
+      if (result.error) throw result.error;
+      data = result.data;
     } catch (error) {
       console.warn("Cadastro em nuvem falhou.", error);
       showToast(getAuthErrorMessage(error));
@@ -9967,6 +9984,35 @@ async function handleSignup(event) {
         submitButton.textContent = "Criar ID";
       }
     }
+
+    let localProfileSaved = true;
+    if (data?.user) {
+      upsertLocalUserFromCloudUser(data.user, { name, username, email, phone, phoneCountry, photo: currentSignupPhoto });
+      localProfileSaved = saveUsers({ sync: false });
+    }
+
+    elements.signupForm.reset();
+    elements.signupUsernameInput.value = "@";
+    elements.signupCountrySelect.value = "BR";
+    currentSignupPhoto = "";
+    renderAvatar(elements.signupPhotoPreview, null);
+    refreshAccountUi();
+    closeModals();
+    if (data?.session) {
+      try {
+        await handleCloudSession(data.session);
+      } catch (error) {
+        console.warn("A conta foi criada, mas a sincronização inicial falhou.", error);
+      }
+      showToast(localProfileSaved
+        ? "Conta criada e sincronização ativada"
+        : "Conta criada. O perfil local será recuperado ao entrar novamente.");
+    } else {
+      showToast(localProfileSaved
+        ? "Conta criada. Confirme o e-mail para continuar."
+        : "Conta criada. Confirme o e-mail; adicione a foto novamente depois de entrar.");
+    }
+    return;
   }
 
   if (users.some((user) => user.email === email || user.username.toLowerCase() === username.toLowerCase())) {
@@ -10180,9 +10226,14 @@ async function handleSettingsPhoto() {
     showToast(`Foto acima de ${formatFileSize(MAX_ATTACHMENT_BYTES)} ignorada`);
     return;
   }
-  pendingProfilePhoto = await readFileAsDataUrl(file);
-  renderAvatar(elements.settingsHeaderAvatar, { photo: pendingProfilePhoto });
-  renderAvatar(elements.settingsProfilePhoto, { photo: pendingProfilePhoto });
+  try {
+    pendingProfilePhoto = await readProfilePhotoAsDataUrl(file);
+    renderAvatar(elements.settingsHeaderAvatar, { photo: pendingProfilePhoto });
+    renderAvatar(elements.settingsProfilePhoto, { photo: pendingProfilePhoto });
+  } catch (error) {
+    console.warn("Não foi possível processar a foto de perfil.", error);
+    showToast("Não foi possível processar essa foto");
+  }
 }
 
 async function saveProfileSettings() {
@@ -11246,6 +11297,42 @@ function readFileAsDataUrl(file) {
     reader.addEventListener("error", () => reject(reader.error));
     reader.readAsDataURL(file);
   });
+}
+
+async function readProfilePhotoAsDataUrl(file) {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.addEventListener("load", resolve, { once: true });
+      image.addEventListener("error", () => reject(new Error("Imagem inválida.")), { once: true });
+      image.src = objectUrl;
+    });
+
+    const width = Math.max(1, image.naturalWidth || image.width || 1);
+    const height = Math.max(1, image.naturalHeight || image.height || 1);
+    const sourceSize = Math.min(width, height);
+    const targetSize = Math.max(1, Math.min(PROFILE_PHOTO_SIZE, Math.round(sourceSize)));
+    const canvas = document.createElement("canvas");
+    canvas.width = targetSize;
+    canvas.height = targetSize;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas indisponível.");
+    context.drawImage(
+      image,
+      (width - sourceSize) / 2,
+      (height - sourceSize) / 2,
+      sourceSize,
+      sourceSize,
+      0,
+      0,
+      targetSize,
+      targetSize
+    );
+    return canvas.toDataURL("image/webp", 0.82);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 function readFileAsText(file) {
