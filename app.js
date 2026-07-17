@@ -2395,14 +2395,24 @@ function formatCloudErrorDetail(text) {
 }
 
 function getAuthErrorMessage(error) {
-  const message = String(error?.message || "").toLowerCase();
+  const rawMessage = String(error?.message || error?.error_description || error?.details || "").trim();
+  const message = rawMessage.toLowerCase();
   if (message.includes("already registered") || message.includes("already exists")) return "Esse e-mail já tem conta. Tente entrar.";
   if (message.includes("invalid login") || message.includes("invalid credentials")) return "E-mail ou senha incorretos.";
   if (message.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar ou solicite um novo link.";
   if (message.includes("otp expired") || message.includes("otp_expired") || message.includes("link has expired")) return "O link de confirmação expirou. Solicite um novo e-mail.";
   if (message.includes("rate limit") || message.includes("too many requests")) return "Aguarde alguns instantes antes de solicitar outro e-mail.";
+  if (message.includes("signup is disabled") || message.includes("signups not allowed")) return "A criação de contas está temporariamente desativada.";
+  if (message.includes("invalid email") || message.includes("email address") && message.includes("invalid")) return "Digite um endereço de e-mail válido.";
+  if (message.includes("error sending confirmation") || message.includes("confirmation email") || message.includes("email send")) {
+    return "A conta não pôde enviar o e-mail de confirmação. Tente novamente em alguns minutos.";
+  }
+  if (message.includes("failed to fetch") || message.includes("networkerror") || message.includes("load failed")) {
+    return "A conexão com o cadastro foi interrompida. Tente novamente sem VPN ou proteção de rede.";
+  }
   if (message.includes("password")) return "A senha precisa atender aos requisitos do Supabase.";
   if (!navigator.onLine) return "Sem internet para conectar à conta.";
+  if (rawMessage) return `Não foi possível criar ou acessar a conta: ${formatCloudErrorDetail(rawMessage)}`;
   return "Não foi possível conectar à conta agora.";
 }
 
@@ -9905,19 +9915,24 @@ async function handleSignup(event) {
   const phoneCountry = getPhoneCountry(elements.signupCountrySelect.value).code;
   const password = elements.signupPasswordInput.value;
 
-  if (!name || username.length < 2 || !email || password.length < 4) {
-    showToast("Preencha nome, @usuário, e-mail e senha");
+  if (!name || username.length < 2 || !email || password.length < 6) {
+    showToast("Preencha nome, @usuário, e-mail e senha com pelo menos 6 caracteres");
     return;
   }
   const client = getSupabaseClient();
 
   if (client) {
+    const submitButton = elements.signupForm.querySelector('button[type="submit"]');
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Criando...";
+    }
     try {
       const { data, error } = await client.auth.signUp({
         email,
         password,
         options: {
-          data: { name, username, phone, phoneCountry, photo: currentSignupPhoto },
+          data: { name, username, phone, phoneCountry },
           emailRedirectTo: AUTH_REDIRECT_URL,
         },
       });
@@ -9946,6 +9961,11 @@ async function handleSignup(event) {
       console.warn("Cadastro em nuvem falhou.", error);
       showToast(getAuthErrorMessage(error));
       return;
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "Criar ID";
+      }
     }
   }
 
@@ -10208,7 +10228,6 @@ async function saveProfileSettings() {
             username: user.username,
             phone: user.phone,
             phoneCountry: user.phoneCountry,
-            photo: user.photo,
           },
         };
         if (email && email !== previousEmail) updatePayload.email = email;
