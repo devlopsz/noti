@@ -8,12 +8,16 @@ const SUPABASE_URL = "https://jzryqqmaumsuxmfgfmtq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6cnlxcW1hdW1zdXhtZmdmbXRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTg2MjMsImV4cCI6MjA5OTc5NDYyM30.SzRZ8a64UZrtcXEdtMNfCMUzEgWrPCZl6LMUN18wvo4";
 const CLOUD_DATA_TABLE = "noti_user_data";
 const CLOUD_CHUNK_TABLE = "noti_user_data_chunks";
+const CLOUD_SNAPSHOT_TABLE = "noti_sync_snapshots";
+const CLOUD_SNAPSHOT_CHUNK_TABLE = "noti_sync_chunks";
+const CLOUD_SNAPSHOT_CHUNK_SIZE = 120000;
+const CLOUD_SNAPSHOT_UPLOAD_BATCH = 4;
 const CLOUD_CHUNK_MARKER = "__notiChunkedAppState";
 const CLOUD_PROFILE_PHOTO_MARKER = "__notiChunkedProfilePhoto";
 const CLOUD_CHUNK_MIN_LENGTH = 90000;
 const CLOUD_CHUNK_SIZE = 45000;
 const CLOUD_CHUNK_BATCH_SIZE = 1;
-const CLOUD_REQUEST_RETRIES = 2;
+const CLOUD_REQUEST_RETRIES = 4;
 const CLOUD_SYNC_DEBOUNCE_MS = 1800;
 const BACKUP_TYPE = "noti-backup";
 const BACKUP_VERSION = 1;
@@ -1491,18 +1495,84 @@ async function fetchCloudSnapshotForCurrentUser(options = {}) {
   if (!client || !cloudSessionUserId) return null;
   if (!options.skipSessionCheck) await ensureCloudSession();
   if (!cloudSessionUserId) return null;
+
+  const { data: manifest, error: manifestError } = await runCloudRequest(() => client
+    .from(CLOUD_SNAPSHOT_TABLE)
+    .select("user_id,snapshot_id,encoding,chunk_count,payload_length,version,updated_at")
+    .eq("user_id", cloudSessionUserId)
+    .maybeSingle());
+  if (manifestError) {
+    if (isCloudMissingSnapshotSchemaError(manifestError)) {
+      return fetchLegacyCloudSnapshot(client, cloudSessionUserId);
+    }
+    throw withCloudStage(manifestError, "a leitura do índice do backup");
+  }
+  if (!manifest) return fetchLegacyCloudSnapshot(client, cloudSessionUserId);
+
+  const { data: chunks, error: chunksError } = await runCloudRequest(() => client
+    .from(CLOUD_SNAPSHOT_CHUNK_TABLE)
+    .select("chunk_index,chunk_data")
+    .eq("user_id", cloudSessionUserId)
+    .eq("snapshot_id", manifest.snapshot_id)
+    .order("chunk_index", { ascending: true }));
+  if (chunksError) throw withCloudStage(chunksError, "o download das notas");
+
+  const expectedCount = Math.max(0, Number(manifest.chunk_count || 0));
+  const orderedChunks = Array.isArray(chunks) ? chunks : [];
+  if (!expectedCount || orderedChunks.length !== expectedCount) {
+    throw withCloudStage(
+      new Error(`Backup incompleto: recebidos ${orderedChunks.length} de ${expectedCount} blocos.`),
+      "a validação do backup"
+    );
+  }
+
+  const payloadText = orderedChunks
+    .sort((first, second) => normalizeNumber(first.chunk_index, 0) - normalizeNumber(second.chunk_index, 0))
+    .map((chunk) => String(chunk.chunk_data || ""))
+    .join("");
+  if (Number(manifest.payload_length || 0) && payloadText.length !== Number(manifest.payload_length)) {
+    throw withCloudStage(new Error("O tamanho do backup recebido não confere."), "a validação do backup");
+  }
+
+  const checksum = await hashCloudSnapshot(payloadText);
+  if (checksum !== String(manifest.snapshot_id || "")) {
+    throw withCloudStage(new Error("A verificação de integridade do backup falhou."), "a validação do backup");
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(payloadText);
+  } catch (error) {
+    throw withCloudStage(error, "a abertura do backup");
+  }
+
+  return {
+    user_id: cloudSessionUserId,
+    email: payload?.email || "",
+    profile: payload?.profile || {},
+    app_state: payload?.app_state || {},
+    preferences: payload?.preferences || {},
+    version: payload?.version || manifest.version || BACKUP_VERSION,
+    updated_at: manifest.updated_at,
+  };
+}
+
+async function fetchLegacyCloudSnapshot(client, userId) {
   const { data, error } = await runCloudRequest(() => client
     .from(CLOUD_DATA_TABLE)
     .select("user_id,email,profile,app_state,preferences,updated_at,version")
-    .eq("user_id", cloudSessionUserId)
+    .eq("user_id", userId)
     .maybeSingle());
-  if (error) throw error;
+  if (error) {
+    if (isCloudMissingLegacySchemaError(error)) return null;
+    throw withCloudStage(error, "a leitura do backup antigo");
+  }
   if (!data) return null;
   if (isChunkedCloudAppState(data.app_state)) {
-    data.app_state = await fetchCloudStateChunks(client, cloudSessionUserId, data.app_state);
+    data.app_state = await fetchCloudStateChunks(client, userId, data.app_state);
   }
   if (isChunkedCloudProfilePhoto(data.profile?.photo)) {
-    data.profile.photo = await fetchCloudProfilePhotoChunks(client, cloudSessionUserId, data.profile.photo);
+    data.profile.photo = await fetchCloudProfilePhotoChunks(client, userId, data.profile.photo);
   }
   return data;
 }
@@ -1533,31 +1603,18 @@ async function saveCloudSnapshotNow(options = {}) {
 
   cloudSyncSaving = true;
   try {
-    const appState = clonePlainData(state);
-    const appStateJson = JSON.stringify(appState);
-    const appStateForCloud = appStateJson.length > CLOUD_CHUNK_MIN_LENGTH
-      ? await saveCloudStateChunks(client, cloudSessionUserId, appStateJson)
-      : appState;
-    if (!isChunkedCloudAppState(appStateForCloud)) {
-      await clearCloudStateChunks(client, cloudSessionUserId);
-    }
     const profile = buildCloudProfile(user);
-    profile.photo = await prepareCloudProfilePhotoForCloud(client, cloudSessionUserId, profile.photo);
-
-    const payload = {
-      user_id: cloudSessionUserId,
+    delete profile.updatedAt;
+    const snapshotPayload = {
+      type: BACKUP_TYPE,
+      version: BACKUP_VERSION,
       email: user.email,
       profile,
-      app_state: appStateForCloud,
+      app_state: clonePlainData(state),
       preferences: clonePlainData(preferences),
-      version: BACKUP_VERSION,
-      updated_at: new Date().toISOString(),
     };
-    const { error } = await runCloudRequest(() => client
-      .from(CLOUD_DATA_TABLE)
-      .upsert(payload, { onConflict: "user_id" }));
-    if (error) throw error;
-    setCloudSyncStatus("synced", "Sincronizado com a nuvem.");
+    await saveCloudSnapshotV2(client, cloudSessionUserId, snapshotPayload);
+    setCloudSyncStatus("synced", "Dados salvos e verificados na nuvem.");
     return true;
   } catch (error) {
     window.notiLastCloudError = error;
@@ -1570,6 +1627,132 @@ async function saveCloudSnapshotNow(options = {}) {
       scheduleCloudSync("Finalizando sincronização...");
     }
   }
+}
+
+async function saveCloudSnapshotV2(client, userId, snapshotPayload) {
+  const payloadText = JSON.stringify(snapshotPayload);
+  const snapshotId = await hashCloudSnapshot(payloadText);
+  const chunks = splitCloudSnapshotText(payloadText);
+  const updatedAt = new Date().toISOString();
+
+  setCloudSyncStatus("syncing", "Preparando o envio seguro...");
+  const { data: uploadedRows, error: uploadedError } = await runCloudRequest(() => client
+    .from(CLOUD_SNAPSHOT_CHUNK_TABLE)
+    .select("chunk_index")
+    .eq("user_id", userId)
+    .eq("snapshot_id", snapshotId));
+  if (uploadedError) throw withCloudStage(uploadedError, "a preparação do envio");
+
+  const uploadedIndexes = new Set(
+    (Array.isArray(uploadedRows) ? uploadedRows : [])
+      .map((row) => normalizeNumber(row.chunk_index, -1))
+      .filter((index) => index >= 0)
+  );
+  const pendingIndexes = chunks
+    .map((_chunk, index) => index)
+    .filter((index) => !uploadedIndexes.has(index));
+  let completedCount = chunks.length - pendingIndexes.length;
+
+  if (completedCount) {
+    setCloudSyncStatus("syncing", `Retomando envio: ${completedCount} de ${chunks.length} blocos já estavam salvos.`);
+  }
+
+  for (let offset = 0; offset < pendingIndexes.length; offset += CLOUD_SNAPSHOT_UPLOAD_BATCH) {
+    const batchIndexes = pendingIndexes.slice(offset, offset + CLOUD_SNAPSHOT_UPLOAD_BATCH);
+    const rows = batchIndexes.map((chunkIndex) => ({
+      user_id: userId,
+      snapshot_id: snapshotId,
+      chunk_index: chunkIndex,
+      chunk_data: chunks[chunkIndex],
+      updated_at: updatedAt,
+    }));
+    const { error } = await runCloudRequest(() => client
+      .from(CLOUD_SNAPSHOT_CHUNK_TABLE)
+      .upsert(rows, { onConflict: "user_id,snapshot_id,chunk_index" }));
+    if (error) {
+      throw withCloudStage(error, `o envio dos blocos ${completedCount + 1} a ${completedCount + rows.length}`);
+    }
+    completedCount += rows.length;
+    setCloudSyncStatus("syncing", `Enviando notas: ${completedCount} de ${chunks.length} blocos.`);
+  }
+
+  const { data: verificationRows, error: verificationError } = await runCloudRequest(() => client
+    .from(CLOUD_SNAPSHOT_CHUNK_TABLE)
+    .select("chunk_index")
+    .eq("user_id", userId)
+    .eq("snapshot_id", snapshotId));
+  if (verificationError) throw withCloudStage(verificationError, "a verificação final");
+  if ((Array.isArray(verificationRows) ? verificationRows.length : 0) !== chunks.length) {
+    throw withCloudStage(new Error("Nem todos os blocos chegaram à nuvem."), "a verificação final");
+  }
+
+  const manifest = {
+    user_id: userId,
+    snapshot_id: snapshotId,
+    encoding: "plain-json",
+    chunk_count: chunks.length,
+    payload_length: payloadText.length,
+    version: BACKUP_VERSION,
+    updated_at: updatedAt,
+  };
+  const { error: manifestError } = await runCloudRequest(() => client
+    .from(CLOUD_SNAPSHOT_TABLE)
+    .upsert(manifest, { onConflict: "user_id" }));
+  if (manifestError) throw withCloudStage(manifestError, "a finalização do backup");
+
+  runCloudRequest(() => client
+    .from(CLOUD_SNAPSHOT_CHUNK_TABLE)
+    .delete()
+    .eq("user_id", userId)
+    .neq("snapshot_id", snapshotId), 1)
+    .catch((error) => console.warn("Não foi possível remover versões antigas do backup.", error));
+}
+
+function splitCloudSnapshotText(payloadText) {
+  const chunks = [];
+  for (let index = 0; index < payloadText.length; index += CLOUD_SNAPSHOT_CHUNK_SIZE) {
+    chunks.push(payloadText.slice(index, index + CLOUD_SNAPSHOT_CHUNK_SIZE));
+  }
+  return chunks.length ? chunks : [""];
+}
+
+async function hashCloudSnapshot(payloadText) {
+  const value = String(payloadText || "");
+  if (window.crypto?.subtle && typeof TextEncoder === "function") {
+    const digest = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  let hashA = 2166136261;
+  let hashB = 2246822519;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    hashA = Math.imul(hashA ^ code, 16777619);
+    hashB = Math.imul(hashB ^ code, 3266489917);
+  }
+  return `${(hashA >>> 0).toString(16).padStart(8, "0")}${(hashB >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function withCloudStage(error, stage) {
+  const wrapped = error instanceof Error
+    ? error
+    : Object.assign(new Error(String(error?.message || "Falha na sincronização.")), error || {});
+  wrapped.cloudStage = stage;
+  return wrapped;
+}
+
+function isCloudMissingSnapshotSchemaError(error) {
+  const text = [error?.code, error?.message, error?.details, error?.hint].filter(Boolean).join(" ");
+  return /noti_sync_snapshots|noti_sync_chunks|schema cache|relation/i.test(text)
+    && /42P01|PGRST205|noti_sync_/i.test(text);
+}
+
+function isCloudMissingLegacySchemaError(error) {
+  const text = [error?.code, error?.message, error?.details, error?.hint].filter(Boolean).join(" ");
+  return /noti_user_data|schema cache|relation/i.test(text)
+    && /42P01|PGRST205|noti_user_data/i.test(text);
 }
 
 function isChunkedCloudAppState(value) {
@@ -1741,14 +1924,14 @@ async function runCloudRequest(requestFactory, retries = CLOUD_REQUEST_RETRIES) 
       const result = await requestFactory();
       if (result?.error && isTransientCloudFetchError(result.error) && attempt < retries) {
         lastError = result.error;
-        await wait(500 + attempt * 700);
+        await wait(Math.min(5000, 700 * (2 ** attempt)));
         continue;
       }
       return result;
     } catch (error) {
       lastError = error;
       if (!isTransientCloudFetchError(error) || attempt >= retries) throw error;
-      await wait(500 + attempt * 700);
+      await wait(Math.min(5000, 700 * (2 ** attempt)));
     }
   }
   throw lastError;
@@ -1800,8 +1983,12 @@ function getCloudSyncErrorMessage(error) {
   const hint = String(error?.hint || "");
   const combined = [message, details, hint, code].filter(Boolean).join(" ");
   const normalized = combined.toLowerCase();
+  const stage = String(error?.cloudStage || "").trim();
 
   if (!navigator.onLine) return "Sem internet. Alterações salvas neste aparelho.";
+  if (/noti_sync_snapshots|noti_sync_chunks/i.test(combined)) {
+    return "Ative a sincronização nova executando o arquivo supabase-noti-sync-v2.sql no Supabase.";
+  }
   if (/noti_user_data_chunks/i.test(combined)) {
     return "Rode o SQL atualizado do Noti no Supabase para salvar notas grandes.";
   }
@@ -1824,7 +2011,10 @@ function getCloudSyncErrorMessage(error) {
     if (window.location.protocol === "file:") {
       return "Abra pelo GitHub Pages para sincronizar na nuvem. O arquivo local pode bloquear o Supabase.";
     }
-    return "A conexão caiu durante o envio para a nuvem. Recarregue e tente salvar novamente.";
+    if (stage) {
+      return `A conexão caiu durante ${stage}. O progresso foi preservado; clique em Salvar dados para continuar.`;
+    }
+    return "A conexão caiu durante o envio. O progresso foi preservado; clique em Salvar dados para continuar.";
   }
   if (/invalid input syntax for type uuid|foreign key|violates foreign key/i.test(combined)) {
     return "A conta da nuvem ficou inconsistente. Saia e entre novamente.";
