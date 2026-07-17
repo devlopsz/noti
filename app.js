@@ -16,7 +16,7 @@ const CLOUD_CHUNK_TABLE = "noti_user_data_chunks";
 const CLOUD_SNAPSHOT_TABLE = "noti_sync_snapshots";
 const CLOUD_SNAPSHOT_CHUNK_TABLE = "noti_sync_chunks";
 const CLOUD_SNAPSHOT_CHUNK_SIZE = 120000;
-const CLOUD_SNAPSHOT_UPLOAD_BATCH = 4;
+const CLOUD_SNAPSHOT_UPLOAD_BATCH = 1;
 const CLOUD_CHUNK_MARKER = "__notiChunkedAppState";
 const CLOUD_PROFILE_PHOTO_MARKER = "__notiChunkedProfilePhoto";
 const CLOUD_CHUNK_MIN_LENGTH = 90000;
@@ -1525,48 +1525,12 @@ async function fetchCloudSnapshotForCurrentUser(options = {}) {
   const session = options.skipSessionCheck
     ? (await client.auth.getSession()).data?.session
     : await ensureCloudSession();
-  if (!cloudSessionUserId) return null;
-  const filePath = getCloudBackupPath(cloudSessionUserId);
-  const primaryResult = await runCloudRequest(() => client.storage
-    .from(CLOUD_BACKUP_BUCKET)
-    .download(filePath), 2);
-  let backupBlob = primaryResult?.data || null;
-  if (primaryResult?.error) {
-    if (isCloudBackupNotFoundError(primaryResult.error)) return null;
-    if (!isTransientCloudFetchError(primaryResult.error) || !session?.access_token) {
-      throw withCloudStage(primaryResult.error, "o download do arquivo de backup");
-    }
+  if (!session?.user || !cloudSessionUserId) return null;
 
-    try {
-      setCloudSyncStatus("syncing", "Tentando a rota direta do backup...");
-      backupBlob = await downloadCloudBackupDirect(session, filePath);
-    } catch (directError) {
-      if (isCloudBackupNotFoundError(directError)) return null;
-      throw createCloudUploadError([
-        { method: "download padrão", error: primaryResult.error },
-        { method: "download direto", error: directError },
-      ], 0, "o download do arquivo de backup");
-    }
-  }
+  const snapshot = await fetchCloudSnapshotV2(client, cloudSessionUserId);
+  if (snapshot) return snapshot;
 
-  let payload;
-  try {
-    payload = JSON.parse(await backupBlob.text());
-  } catch (error) {
-    throw withCloudStage(error, "a abertura do arquivo de backup");
-  }
-  const backupState = extractBackupState(payload);
-  return {
-    user_id: cloudSessionUserId,
-    email: getCurrentUser()?.email || "",
-    profile: payload?.profile && typeof payload.profile === "object"
-      ? clonePlainData(payload.profile)
-      : buildCloudProfile(getCurrentUser() || {}),
-    app_state: backupState,
-    preferences: extractBackupPreferences(payload) || clonePlainData(preferences),
-    version: payload?.version || BACKUP_VERSION,
-    updated_at: payload?.exportedAt || "",
-  };
+  return fetchLegacyCloudSnapshot(client, cloudSessionUserId);
 }
 
 async function fetchLegacyCloudSnapshot(client, userId) {
@@ -1623,10 +1587,9 @@ async function saveCloudSnapshotNow(options = {}) {
   try {
     const payload = createNotesBackupPayload();
     const payloadText = JSON.stringify(payload, null, 2);
-    const checksum = await hashCloudSnapshot(payloadText);
     const backupFile = new File(
       [payloadText],
-      `noti-backup-${checksum}.json`,
+      CLOUD_BACKUP_FILE_NAME,
       { type: "application/json", lastModified: 0 }
     );
     if (backupFile.size > CLOUD_MAX_BACKUP_BYTES) {
@@ -1635,9 +1598,8 @@ async function saveCloudSnapshotNow(options = {}) {
       throw error;
     }
 
-    const filePath = getCloudBackupPath(cloudSessionUserId);
-    setCloudSyncStatus("syncing", `Enviando ${formatFileSize(backupFile.size)} para a nuvem...`);
-    await uploadCloudBackup(client, session, filePath, backupFile);
+    setCloudSyncStatus("syncing", `Enviando ${formatFileSize(backupFile.size)} em blocos seguros...`);
+    await saveCloudSnapshotV2(client, cloudSessionUserId, payload);
 
     setCloudSyncStatus("synced", `Backup salvo na nuvem: ${formatFileSize(backupFile.size)}.`);
     return true;
@@ -1953,6 +1915,71 @@ function isCloudBackupNotFoundError(error) {
   const status = Number(error?.status || error?.statusCode || 0);
   const text = [error?.message, error?.error, error?.code].filter(Boolean).join(" ");
   return status === 404 || /object not found|not found|no such object/i.test(text);
+}
+
+async function fetchCloudSnapshotV2(client, userId) {
+  const { data: manifest, error: manifestError } = await runCloudRequest(() => client
+    .from(CLOUD_SNAPSHOT_TABLE)
+    .select("user_id,snapshot_id,encoding,chunk_count,payload_length,version,updated_at")
+    .eq("user_id", userId)
+    .maybeSingle());
+  if (manifestError) throw withCloudStage(manifestError, "a leitura do índice do backup");
+  if (!manifest) return null;
+
+  const expectedCount = Math.max(0, normalizeNumber(manifest.chunk_count, 0));
+  if (!expectedCount || !manifest.snapshot_id) {
+    throw withCloudStage(new Error("O índice do backup está incompleto."), "a leitura do índice do backup");
+  }
+
+  setCloudSyncStatus("syncing", `Baixando ${expectedCount} blocos do backup...`);
+  const { data: rows, error: chunksError } = await runCloudRequest(() => client
+    .from(CLOUD_SNAPSHOT_CHUNK_TABLE)
+    .select("chunk_index,chunk_data")
+    .eq("user_id", userId)
+    .eq("snapshot_id", manifest.snapshot_id)
+    .order("chunk_index", { ascending: true }));
+  if (chunksError) throw withCloudStage(chunksError, "o download dos blocos do backup");
+
+  const chunks = Array.isArray(rows) ? rows : [];
+  if (chunks.length !== expectedCount) {
+    throw withCloudStage(
+      new Error(`Backup incompleto: ${chunks.length} de ${expectedCount} blocos encontrados.`),
+      "a verificação do backup"
+    );
+  }
+
+  const payloadText = chunks
+    .sort((first, second) => normalizeNumber(first.chunk_index, 0) - normalizeNumber(second.chunk_index, 0))
+    .map((row) => String(row.chunk_data || ""))
+    .join("");
+  const expectedLength = Math.max(0, normalizeNumber(manifest.payload_length, 0));
+  if (expectedLength && payloadText.length !== expectedLength) {
+    throw withCloudStage(new Error("O tamanho do backup baixado não corresponde ao original."), "a verificação do backup");
+  }
+
+  const checksum = await hashCloudSnapshot(payloadText);
+  if (checksum !== manifest.snapshot_id) {
+    throw withCloudStage(new Error("A integridade do backup não pôde ser confirmada."), "a verificação do backup");
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(payloadText);
+  } catch (error) {
+    throw withCloudStage(error, "a abertura do backup");
+  }
+
+  return {
+    user_id: userId,
+    email: getCurrentUser()?.email || "",
+    profile: payload?.profile && typeof payload.profile === "object"
+      ? clonePlainData(payload.profile)
+      : buildCloudProfile(getCurrentUser() || {}),
+    app_state: extractBackupState(payload),
+    preferences: extractBackupPreferences(payload) || clonePlainData(preferences),
+    version: payload?.version || manifest.version || BACKUP_VERSION,
+    updated_at: payload?.exportedAt || manifest.updated_at || "",
+  };
 }
 
 async function saveCloudSnapshotV2(client, userId, snapshotPayload) {
@@ -2345,9 +2372,6 @@ function getCloudSyncErrorMessage(error) {
   if (/failed to fetch|networkerror|load failed|fetch failed/i.test(normalized)) {
     if (window.location.protocol === "file:") {
       return "Abra pelo GitHub Pages para sincronizar na nuvem. O arquivo local pode bloquear o Supabase.";
-    }
-    if (/Edg\//i.test(navigator.userAgent || "")) {
-      return "O Microsoft Edge bloqueou a conexão com a nuvem. No ícone ao lado do endereço, desative a Prevenção de rastreamento para o Noti e tente novamente.";
     }
     if (stage) {
       const size = Number(error?.cloudFileSize || 0);
