@@ -770,6 +770,7 @@
               <label class="terms-line"><input type="checkbox" checked /> Aceito os termos e a privacidade</label>
               <button class="primary-action filled" type="submit">Entrar</button>
               <p class="account-switch">Não tem ID? <button type="button" data-account-switch="signup">Criar ID</button></p>
+              <p class="account-switch">Não recebeu a confirmação? <button id="resendConfirmationButton" type="button">Reenviar e-mail</button></p>
             </form>
             <form class="account-form" id="signupForm" hidden>
               <label class="photo-picker signup-photo-card"><span id="signupPhotoPreview"><svg><use href="#icon-user"></use></svg></span><strong>Foto de perfil</strong><input id="signupPhotoInput" type="file" accept="image/*" hidden /></label>
@@ -960,6 +961,7 @@
 
     <script src="default-state.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4/dist/tus.min.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

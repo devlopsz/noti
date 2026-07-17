@@ -6,6 +6,11 @@ const PREFS_KEY = "noti-preferences-v1";
 const FIRST_VISIT_KEY = "noti-first-visit-seen-v1";
 const SUPABASE_URL = "https://jzryqqmaumsuxmfgfmtq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6cnlxcW1hdW1zdXhtZmdmbXRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTg2MjMsImV4cCI6MjA5OTc5NDYyM30.SzRZ8a64UZrtcXEdtMNfCMUzEgWrPCZl6LMUN18wvo4";
+const AUTH_REDIRECT_URL = "https://devlopsz.github.io/noti./";
+const CLOUD_BACKUP_BUCKET = "noti-backups";
+const CLOUD_BACKUP_FILE_NAME = "noti-backup.json";
+const CLOUD_RESUMABLE_UPLOAD_THRESHOLD = 6 * 1024 * 1024;
+const CLOUD_MAX_BACKUP_BYTES = 50 * 1024 * 1024;
 const CLOUD_DATA_TABLE = "noti_user_data";
 const CLOUD_CHUNK_TABLE = "noti_user_data_chunks";
 const CLOUD_SNAPSHOT_TABLE = "noti_sync_snapshots";
@@ -562,6 +567,7 @@ const elements = {
   signupForm: $("#signupForm"),
   loginIdentifierInput: $("#loginIdentifierInput"),
   loginPasswordInput: $("#loginPasswordInput"),
+  resendConfirmationButton: $("#resendConfirmationButton"),
   signupPhotoInput: $("#signupPhotoInput"),
   signupPhotoPreview: $("#signupPhotoPreview"),
   signupNameInput: $("#signupNameInput"),
@@ -681,6 +687,7 @@ function bindEvents() {
   elements.signupTabButton.addEventListener("click", () => setActiveAccountPanel("signup"));
   elements.loginForm.addEventListener("submit", handleLogin);
   elements.signupForm.addEventListener("submit", handleSignup);
+  elements.resendConfirmationButton?.addEventListener("click", resendSignupConfirmation);
   elements.signupUsernameInput.addEventListener("input", () => keepUsernamePrefix(elements.signupUsernameInput));
   elements.signupUsernameInput.addEventListener("blur", () => normalizeUsernameInput(elements.signupUsernameInput));
   elements.signupPhotoInput.addEventListener("change", handleSignupPhoto);
@@ -1257,12 +1264,34 @@ async function initializeCloudAuth() {
     const { data, error } = await client.auth.getSession();
     if (error) throw error;
     await handleCloudSession(data?.session || null, { initial: true });
+    handleAuthRedirectFeedback(data?.session || null);
     client.auth.onAuthStateChange((_event, session) => {
       window.setTimeout(() => handleCloudSession(session, { event: _event }), 0);
     });
   } catch (error) {
     console.warn("Não foi possível iniciar o Supabase.", error);
     setCloudSyncStatus("error", "Não foi possível conectar à nuvem agora.");
+  }
+}
+
+function handleAuthRedirectFeedback(session) {
+  const hashParams = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
+  const searchParams = new URLSearchParams(window.location.search || "");
+  const params = hashParams.has("error") || hashParams.has("error_code") ? hashParams : searchParams;
+  const errorCode = String(params.get("error_code") || "");
+  const errorDescription = String(params.get("error_description") || "").replace(/\+/g, " ");
+  if (errorCode || params.get("error")) {
+    const message = errorCode === "otp_expired"
+      ? "O link de confirmação expirou. Entre com o e-mail e clique em Reenviar e-mail."
+      : (errorDescription || "Não foi possível confirmar o e-mail.");
+    showToast(message);
+    openAccountModal("login");
+    window.history.replaceState({}, document.title, window.location.pathname);
+    return;
+  }
+  if (session && /access_token|refresh_token|type=signup|code=/i.test(`${window.location.hash || ""}${window.location.search || ""}`)) {
+    showToast("E-mail confirmado. Sua conta está conectada.");
+    window.history.replaceState({}, document.title, window.location.pathname);
   }
 }
 
@@ -1495,65 +1524,32 @@ async function fetchCloudSnapshotForCurrentUser(options = {}) {
   if (!client || !cloudSessionUserId) return null;
   if (!options.skipSessionCheck) await ensureCloudSession();
   if (!cloudSessionUserId) return null;
-
-  const { data: manifest, error: manifestError } = await runCloudRequest(() => client
-    .from(CLOUD_SNAPSHOT_TABLE)
-    .select("user_id,snapshot_id,encoding,chunk_count,payload_length,version,updated_at")
-    .eq("user_id", cloudSessionUserId)
-    .maybeSingle());
-  if (manifestError) {
-    if (isCloudMissingSnapshotSchemaError(manifestError)) {
-      return fetchLegacyCloudSnapshot(client, cloudSessionUserId);
-    }
-    throw withCloudStage(manifestError, "a leitura do índice do backup");
-  }
-  if (!manifest) return fetchLegacyCloudSnapshot(client, cloudSessionUserId);
-
-  const { data: chunks, error: chunksError } = await runCloudRequest(() => client
-    .from(CLOUD_SNAPSHOT_CHUNK_TABLE)
-    .select("chunk_index,chunk_data")
-    .eq("user_id", cloudSessionUserId)
-    .eq("snapshot_id", manifest.snapshot_id)
-    .order("chunk_index", { ascending: true }));
-  if (chunksError) throw withCloudStage(chunksError, "o download das notas");
-
-  const expectedCount = Math.max(0, Number(manifest.chunk_count || 0));
-  const orderedChunks = Array.isArray(chunks) ? chunks : [];
-  if (!expectedCount || orderedChunks.length !== expectedCount) {
-    throw withCloudStage(
-      new Error(`Backup incompleto: recebidos ${orderedChunks.length} de ${expectedCount} blocos.`),
-      "a validação do backup"
-    );
-  }
-
-  const payloadText = orderedChunks
-    .sort((first, second) => normalizeNumber(first.chunk_index, 0) - normalizeNumber(second.chunk_index, 0))
-    .map((chunk) => String(chunk.chunk_data || ""))
-    .join("");
-  if (Number(manifest.payload_length || 0) && payloadText.length !== Number(manifest.payload_length)) {
-    throw withCloudStage(new Error("O tamanho do backup recebido não confere."), "a validação do backup");
-  }
-
-  const checksum = await hashCloudSnapshot(payloadText);
-  if (checksum !== String(manifest.snapshot_id || "")) {
-    throw withCloudStage(new Error("A verificação de integridade do backup falhou."), "a validação do backup");
+  const filePath = getCloudBackupPath(cloudSessionUserId);
+  const { data, error } = await runCloudRequest(() => client.storage
+    .from(CLOUD_BACKUP_BUCKET)
+    .download(filePath), 2);
+  if (error) {
+    if (isCloudBackupNotFoundError(error)) return null;
+    throw withCloudStage(error, "o download do arquivo de backup");
   }
 
   let payload;
   try {
-    payload = JSON.parse(payloadText);
+    payload = JSON.parse(await data.text());
   } catch (error) {
-    throw withCloudStage(error, "a abertura do backup");
+    throw withCloudStage(error, "a abertura do arquivo de backup");
   }
-
+  const backupState = extractBackupState(payload);
   return {
     user_id: cloudSessionUserId,
-    email: payload?.email || "",
-    profile: payload?.profile || {},
-    app_state: payload?.app_state || {},
-    preferences: payload?.preferences || {},
-    version: payload?.version || manifest.version || BACKUP_VERSION,
-    updated_at: manifest.updated_at,
+    email: getCurrentUser()?.email || "",
+    profile: payload?.profile && typeof payload.profile === "object"
+      ? clonePlainData(payload.profile)
+      : buildCloudProfile(getCurrentUser() || {}),
+    app_state: backupState,
+    preferences: extractBackupPreferences(payload) || clonePlainData(preferences),
+    version: payload?.version || BACKUP_VERSION,
+    updated_at: payload?.exportedAt || "",
   };
 }
 
@@ -1589,8 +1585,14 @@ function scheduleCloudSync(message = "Sincronizando...") {
 async function saveCloudSnapshotNow(options = {}) {
   const client = getSupabaseClient();
   if (!client) return false;
+  let session = null;
   if (!options.skipSessionCheck) {
-    const session = await ensureCloudSession();
+    session = await ensureCloudSession();
+    if (!session?.user) return false;
+  } else {
+    const { data, error } = await client.auth.getSession();
+    if (error) throw error;
+    session = data?.session || null;
     if (!session?.user) return false;
   }
   const user = getCurrentUser();
@@ -1603,18 +1605,35 @@ async function saveCloudSnapshotNow(options = {}) {
 
   cloudSyncSaving = true;
   try {
-    const profile = buildCloudProfile(user);
-    delete profile.updatedAt;
-    const snapshotPayload = {
-      type: BACKUP_TYPE,
-      version: BACKUP_VERSION,
-      email: user.email,
-      profile,
-      app_state: clonePlainData(state),
-      preferences: clonePlainData(preferences),
-    };
-    await saveCloudSnapshotV2(client, cloudSessionUserId, snapshotPayload);
-    setCloudSyncStatus("synced", "Dados salvos e verificados na nuvem.");
+    const payload = createNotesBackupPayload();
+    const payloadText = JSON.stringify(payload, null, 2);
+    const checksum = await hashCloudSnapshot(payloadText);
+    const backupFile = new File(
+      [payloadText],
+      `noti-backup-${checksum}.json`,
+      { type: "application/json", lastModified: 0 }
+    );
+    if (backupFile.size > CLOUD_MAX_BACKUP_BYTES) {
+      const error = new Error(`O backup possui ${formatFileSize(backupFile.size)} e ultrapassa o limite de 50 MB.`);
+      error.status = 413;
+      throw error;
+    }
+
+    const filePath = getCloudBackupPath(cloudSessionUserId);
+    setCloudSyncStatus("syncing", `Enviando ${formatFileSize(backupFile.size)} para a nuvem...`);
+    if (backupFile.size > CLOUD_RESUMABLE_UPLOAD_THRESHOLD && window.tus?.Upload) {
+      try {
+        await uploadCloudBackupResumable(session, filePath, backupFile);
+      } catch (error) {
+        console.warn("Envio retomável indisponível; tentando o envio padrão.", error);
+        setCloudSyncStatus("syncing", "Tentando um envio compatível...");
+        await uploadCloudBackupStandard(client, filePath, backupFile);
+      }
+    } else {
+      await uploadCloudBackupStandard(client, filePath, backupFile);
+    }
+
+    setCloudSyncStatus("synced", `Backup salvo na nuvem: ${formatFileSize(backupFile.size)}.`);
     return true;
   } catch (error) {
     window.notiLastCloudError = error;
@@ -1627,6 +1646,68 @@ async function saveCloudSnapshotNow(options = {}) {
       scheduleCloudSync("Finalizando sincronização...");
     }
   }
+}
+
+function getCloudBackupPath(userId) {
+  return `${String(userId || "").trim()}/${CLOUD_BACKUP_FILE_NAME}`;
+}
+
+async function uploadCloudBackupStandard(client, filePath, backupFile) {
+  const { error } = await runCloudRequest(() => client.storage
+    .from(CLOUD_BACKUP_BUCKET)
+    .upload(filePath, backupFile, {
+      cacheControl: "0",
+      contentType: "application/json",
+      upsert: true,
+    }), 2);
+  if (error) throw withCloudStage(error, "o envio do arquivo de backup");
+}
+
+function uploadCloudBackupResumable(session, filePath, backupFile) {
+  const projectId = new URL(SUPABASE_URL).hostname.split(".")[0];
+  return new Promise((resolve, reject) => {
+    const upload = new window.tus.Upload(backupFile, {
+      endpoint: `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`,
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      headers: {
+        authorization: `Bearer ${session.access_token}`,
+        apikey: SUPABASE_ANON_KEY,
+        "x-upsert": "true",
+      },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      chunkSize: 6 * 1024 * 1024,
+      metadata: {
+        bucketName: CLOUD_BACKUP_BUCKET,
+        objectName: filePath,
+        contentType: "application/json",
+        cacheControl: "0",
+      },
+      onProgress(bytesUploaded, bytesTotal) {
+        const percent = bytesTotal ? Math.round((bytesUploaded / bytesTotal) * 100) : 0;
+        setCloudSyncStatus("syncing", `Enviando backup: ${percent}%.`);
+      },
+      onError(error) {
+        reject(withCloudStage(error, "o envio retomável do arquivo de backup"));
+      },
+      onSuccess() {
+        resolve(true);
+      },
+    });
+
+    upload.findPreviousUploads()
+      .then((previousUploads) => {
+        if (previousUploads.length) upload.resumeFromPreviousUpload(previousUploads[0]);
+        upload.start();
+      })
+      .catch(() => upload.start());
+  });
+}
+
+function isCloudBackupNotFoundError(error) {
+  const status = Number(error?.status || error?.statusCode || 0);
+  const text = [error?.message, error?.error, error?.code].filter(Boolean).join(" ");
+  return status === 404 || /object not found|not found|no such object/i.test(text);
 }
 
 async function saveCloudSnapshotV2(client, userId, snapshotPayload) {
@@ -1986,6 +2067,12 @@ function getCloudSyncErrorMessage(error) {
   const stage = String(error?.cloudStage || "").trim();
 
   if (!navigator.onLine) return "Sem internet. Alterações salvas neste aparelho.";
+  if (/bucket not found|noti-backups/i.test(combined)) {
+    return "Crie o armazenamento executando o arquivo supabase-noti-storage.sql no Supabase.";
+  }
+  if (/mime type|application\/json|invalid mime/i.test(normalized)) {
+    return "O bucket do backup não aceita JSON. Execute novamente o arquivo supabase-noti-storage.sql.";
+  }
   if (/noti_sync_snapshots|noti_sync_chunks/i.test(combined)) {
     return "Ative a sincronização nova executando o arquivo supabase-noti-sync-v2.sql no Supabase.";
   }
@@ -2002,6 +2089,9 @@ function getCloudSyncErrorMessage(error) {
     return "Sessão expirada. Entre novamente para sincronizar.";
   }
   if (status === 403 || code === "42501" || /row-level security|permission denied|violates row-level security|rls/i.test(combined)) {
+    if (/storage|bucket|object/i.test(normalized) || stage.includes("arquivo de backup")) {
+      return "Permissão do armazenamento negada. Execute novamente o arquivo supabase-noti-storage.sql.";
+    }
     return "Permissão da nuvem negada. Rode o SQL de políticas do Noti no Supabase.";
   }
   if (status === 413 || /payload|too large|request entity too large|maximum size/i.test(normalized)) {
@@ -2034,7 +2124,9 @@ function getAuthErrorMessage(error) {
   const message = String(error?.message || "").toLowerCase();
   if (message.includes("already registered") || message.includes("already exists")) return "Esse e-mail já tem conta. Tente entrar.";
   if (message.includes("invalid login") || message.includes("invalid credentials")) return "E-mail ou senha incorretos.";
-  if (message.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar.";
+  if (message.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar ou solicite um novo link.";
+  if (message.includes("otp expired") || message.includes("otp_expired") || message.includes("link has expired")) return "O link de confirmação expirou. Solicite um novo e-mail.";
+  if (message.includes("rate limit") || message.includes("too many requests")) return "Aguarde alguns instantes antes de solicitar outro e-mail.";
   if (message.includes("password")) return "A senha precisa atender aos requisitos do Supabase.";
   if (!navigator.onLine) return "Sem internet para conectar à conta.";
   return "Não foi possível conectar à conta agora.";
@@ -9552,6 +9644,7 @@ async function handleSignup(event) {
         password,
         options: {
           data: { name, username, phone, phoneCountry, photo: currentSignupPhoto },
+          emailRedirectTo: AUTH_REDIRECT_URL,
         },
       });
       if (error) throw error;
@@ -9603,6 +9696,42 @@ async function handleSignup(event) {
   showToast("Conta local criada");
 }
 
+async function resendSignupConfirmation() {
+  const identifier = String(elements.loginIdentifierInput?.value || "").trim().toLowerCase();
+  const localUser = users.find((candidate) => (
+    candidate.email === identifier
+    || candidate.username.toLowerCase() === normalizeUsername(identifier).toLowerCase()
+  ));
+  const email = identifier.startsWith("@") ? localUser?.email : identifier;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showToast("Digite o e-mail da conta para reenviar a confirmação");
+    elements.loginIdentifierInput?.focus();
+    return;
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    showToast("A confirmação em nuvem não está disponível agora");
+    return;
+  }
+
+  if (elements.resendConfirmationButton) elements.resendConfirmationButton.disabled = true;
+  try {
+    const { error } = await client.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: AUTH_REDIRECT_URL },
+    });
+    if (error) throw error;
+    showToast("Novo e-mail de confirmação enviado");
+  } catch (error) {
+    console.warn("Não foi possível reenviar a confirmação.", error);
+    showToast(getAuthErrorMessage(error));
+  } finally {
+    if (elements.resendConfirmationButton) elements.resendConfirmationButton.disabled = false;
+  }
+}
+
 async function handleLogin(event) {
   event.preventDefault();
   const identifier = elements.loginIdentifierInput.value.trim().toLowerCase();
@@ -9631,6 +9760,10 @@ async function handleLogin(event) {
       return;
     } catch (error) {
       console.warn("Login em nuvem falhou.", error);
+      if (/email not confirmed|email_not_confirmed/i.test(String(error?.message || ""))) {
+        showToast("Confirme seu e-mail ou clique em Reenviar e-mail.");
+        return;
+      }
       if (!localUser || localUser.password !== password) {
         showToast(getAuthErrorMessage(error));
         return;
@@ -10158,8 +10291,9 @@ function downloadBlob(blob, fileName) {
   setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 
-function downloadNotesBackup() {
-  const payload = {
+function createNotesBackupPayload() {
+  const user = getCurrentUser();
+  return {
     type: BACKUP_TYPE,
     version: BACKUP_VERSION,
     app: "Noti",
@@ -10176,8 +10310,12 @@ function downloadNotesBackup() {
     },
     state: clonePlainData(state),
     preferences: clonePlainData(preferences),
+    profile: user ? clonePlainData(buildCloudProfile(user)) : null,
   };
+}
 
+function downloadNotesBackup() {
+  const payload = createNotesBackupPayload();
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const link = document.createElement("a");
   const url = URL.createObjectURL(blob);
