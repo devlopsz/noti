@@ -1522,20 +1522,36 @@ async function syncCloudDataManually() {
 async function fetchCloudSnapshotForCurrentUser(options = {}) {
   const client = getSupabaseClient();
   if (!client || !cloudSessionUserId) return null;
-  if (!options.skipSessionCheck) await ensureCloudSession();
+  const session = options.skipSessionCheck
+    ? (await client.auth.getSession()).data?.session
+    : await ensureCloudSession();
   if (!cloudSessionUserId) return null;
   const filePath = getCloudBackupPath(cloudSessionUserId);
-  const { data, error } = await runCloudRequest(() => client.storage
+  const primaryResult = await runCloudRequest(() => client.storage
     .from(CLOUD_BACKUP_BUCKET)
     .download(filePath), 2);
-  if (error) {
-    if (isCloudBackupNotFoundError(error)) return null;
-    throw withCloudStage(error, "o download do arquivo de backup");
+  let backupBlob = primaryResult?.data || null;
+  if (primaryResult?.error) {
+    if (isCloudBackupNotFoundError(primaryResult.error)) return null;
+    if (!isTransientCloudFetchError(primaryResult.error) || !session?.access_token) {
+      throw withCloudStage(primaryResult.error, "o download do arquivo de backup");
+    }
+
+    try {
+      setCloudSyncStatus("syncing", "Tentando a rota direta do backup...");
+      backupBlob = await downloadCloudBackupDirect(session, filePath);
+    } catch (directError) {
+      if (isCloudBackupNotFoundError(directError)) return null;
+      throw createCloudUploadError([
+        { method: "download padrão", error: primaryResult.error },
+        { method: "download direto", error: directError },
+      ], 0, "o download do arquivo de backup");
+    }
   }
 
   let payload;
   try {
-    payload = JSON.parse(await data.text());
+    payload = JSON.parse(await backupBlob.text());
   } catch (error) {
     throw withCloudStage(error, "a abertura do arquivo de backup");
   }
@@ -1621,17 +1637,7 @@ async function saveCloudSnapshotNow(options = {}) {
 
     const filePath = getCloudBackupPath(cloudSessionUserId);
     setCloudSyncStatus("syncing", `Enviando ${formatFileSize(backupFile.size)} para a nuvem...`);
-    if (backupFile.size > CLOUD_RESUMABLE_UPLOAD_THRESHOLD && window.tus?.Upload) {
-      try {
-        await uploadCloudBackupResumable(session, filePath, backupFile);
-      } catch (error) {
-        console.warn("Envio retomável indisponível; tentando o envio padrão.", error);
-        setCloudSyncStatus("syncing", "Tentando um envio compatível...");
-        await uploadCloudBackupStandard(client, filePath, backupFile);
-      }
-    } else {
-      await uploadCloudBackupStandard(client, filePath, backupFile);
-    }
+    await uploadCloudBackup(client, session, filePath, backupFile);
 
     setCloudSyncStatus("synced", `Backup salvo na nuvem: ${formatFileSize(backupFile.size)}.`);
     return true;
@@ -1652,6 +1658,91 @@ function getCloudBackupPath(userId) {
   return `${String(userId || "").trim()}/${CLOUD_BACKUP_FILE_NAME}`;
 }
 
+function getCloudStorageDirectBaseUrl() {
+  const projectId = new URL(SUPABASE_URL).hostname.split(".")[0];
+  return `https://${projectId}.storage.supabase.co/storage/v1`;
+}
+
+function getCloudStorageObjectUrl(filePath, options = {}) {
+  const baseUrl = options.direct
+    ? getCloudStorageDirectBaseUrl()
+    : `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1`;
+  const encodedPath = String(filePath || "")
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  const route = options.authenticated ? "object/authenticated" : "object";
+  return `${baseUrl}/${route}/${encodeURIComponent(CLOUD_BACKUP_BUCKET)}/${encodedPath}`;
+}
+
+function getCloudStorageRequestHeaders(session, extra = {}) {
+  return {
+    apikey: SUPABASE_ANON_KEY,
+    authorization: `Bearer ${session.access_token}`,
+    ...extra,
+  };
+}
+
+async function createCloudHttpError(response, fallbackMessage) {
+  let responseText = "";
+  try {
+    responseText = await response.text();
+  } catch (_error) {
+    responseText = "";
+  }
+
+  let payload = null;
+  try {
+    payload = responseText ? JSON.parse(responseText) : null;
+  } catch (_error) {
+    payload = null;
+  }
+
+  const message = String(
+    payload?.message
+    || payload?.error
+    || responseText
+    || fallbackMessage
+    || `A nuvem respondeu ${response.status}.`
+  );
+  const error = new Error(message);
+  error.name = "CloudStorageHttpError";
+  error.status = response.status;
+  error.statusCode = response.status;
+  error.code = payload?.statusCode || payload?.code || "";
+  error.details = payload?.error || "";
+  return error;
+}
+
+async function downloadCloudBackupDirect(session, filePath) {
+  const routes = [
+    getCloudStorageObjectUrl(filePath, { direct: true, authenticated: true }),
+    getCloudStorageObjectUrl(filePath, { direct: true }),
+  ];
+  let lastError = null;
+
+  for (const url of routes) {
+    try {
+      const response = await runCloudRequest(() => fetch(url, {
+        method: "GET",
+        headers: getCloudStorageRequestHeaders(session),
+        cache: "no-store",
+      }), 1);
+      if (!response.ok) {
+        const error = await createCloudHttpError(response, "Não foi possível baixar o backup.");
+        lastError = error;
+        continue;
+      }
+      return await response.blob();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientCloudFetchError(error) && !isCloudBackupNotFoundError(error)) throw error;
+    }
+  }
+
+  throw withCloudStage(lastError || new Error("Falha na rota direta do backup."), "o download direto do arquivo de backup");
+}
+
 async function uploadCloudBackupStandard(client, filePath, backupFile) {
   const { error } = await runCloudRequest(() => client.storage
     .from(CLOUD_BACKUP_BUCKET)
@@ -1663,11 +1754,102 @@ async function uploadCloudBackupStandard(client, filePath, backupFile) {
   if (error) throw withCloudStage(error, "o envio do arquivo de backup");
 }
 
-function uploadCloudBackupResumable(session, filePath, backupFile) {
+async function uploadCloudBackupDirectStandard(session, filePath, backupFile) {
+  const formData = new FormData();
+  formData.append("cacheControl", "0");
+  formData.append("", backupFile);
+  const response = await runCloudRequest(() => fetch(
+    getCloudStorageObjectUrl(filePath, { direct: true }),
+    {
+      method: "POST",
+      headers: getCloudStorageRequestHeaders(session, { "x-upsert": "true" }),
+      body: formData,
+    }
+  ), 1);
+  if (!response.ok) {
+    throw withCloudStage(
+      await createCloudHttpError(response, "Não foi possível enviar o backup pela rota direta."),
+      "o envio direto do arquivo de backup"
+    );
+  }
+}
+
+async function uploadCloudBackup(client, session, filePath, backupFile) {
+  const attempts = [];
+  const shouldPreferResumable = backupFile.size > CLOUD_RESUMABLE_UPLOAD_THRESHOLD;
+  const canResume = Boolean(window.tus?.Upload);
+
+  if (!shouldPreferResumable) {
+    try {
+      await uploadCloudBackupStandard(client, filePath, backupFile);
+      return;
+    } catch (error) {
+      attempts.push({ method: "padrão", error });
+      if (!isTransientCloudFetchError(error) && !isCloudPayloadError(error)) throw error;
+    }
+
+    try {
+      setCloudSyncStatus("syncing", "Tentando a rota direta da nuvem...");
+      await uploadCloudBackupDirectStandard(session, filePath, backupFile);
+      return;
+    } catch (error) {
+      attempts.push({ method: "direto", error });
+      if (!isTransientCloudFetchError(error) && !isCloudPayloadError(error)) throw error;
+    }
+  }
+
+  if (canResume) {
+    const endpoints = getCloudResumableUploadEndpoints();
+    for (let index = 0; index < endpoints.length; index++) {
+      const endpoint = endpoints[index];
+      try {
+        setCloudSyncStatus("syncing", index === 0
+          ? "Iniciando envio retomável..."
+          : "Tentando a rota alternativa da nuvem...");
+        await uploadCloudBackupResumable(session, filePath, backupFile, endpoint);
+        return;
+      } catch (error) {
+        attempts.push({ method: index === 0 ? "retomável direto" : "retomável alternativo", error });
+      }
+    }
+  } else {
+    attempts.push({ method: "retomável", error: new Error("Cliente de envio retomável indisponível.") });
+  }
+
+  if (shouldPreferResumable) {
+    try {
+      setCloudSyncStatus("syncing", "Tentando um envio compatível...");
+      await uploadCloudBackupStandard(client, filePath, backupFile);
+      return;
+    } catch (error) {
+      attempts.push({ method: "padrão", error });
+    }
+
+    try {
+      setCloudSyncStatus("syncing", "Tentando a rota direta compatível...");
+      await uploadCloudBackupDirectStandard(session, filePath, backupFile);
+      return;
+    } catch (error) {
+      attempts.push({ method: "direto", error });
+    }
+  }
+
+  throw createCloudUploadError(attempts, backupFile.size);
+}
+
+function getCloudResumableUploadEndpoints() {
   const projectId = new URL(SUPABASE_URL).hostname.split(".")[0];
+  return [
+    `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`,
+    `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/upload/resumable`,
+  ];
+}
+
+function uploadCloudBackupResumable(session, filePath, backupFile, endpoint) {
   return new Promise((resolve, reject) => {
+    let settled = false;
     const upload = new window.tus.Upload(backupFile, {
-      endpoint: `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`,
+      endpoint,
       retryDelays: [0, 3000, 5000, 10000, 20000],
       headers: {
         authorization: `Bearer ${session.access_token}`,
@@ -1688,9 +1870,13 @@ function uploadCloudBackupResumable(session, filePath, backupFile) {
         setCloudSyncStatus("syncing", `Enviando backup: ${percent}%.`);
       },
       onError(error) {
+        if (settled) return;
+        settled = true;
         reject(withCloudStage(error, "o envio retomável do arquivo de backup"));
       },
       onSuccess() {
+        if (settled) return;
+        settled = true;
         resolve(true);
       },
     });
@@ -1702,6 +1888,65 @@ function uploadCloudBackupResumable(session, filePath, backupFile) {
       })
       .catch(() => upload.start());
   });
+}
+
+function createCloudUploadError(attempts, fileSize, stage = "o envio do arquivo de backup") {
+  const entries = attempts.filter((attempt) => attempt?.error);
+  const lastError = entries[entries.length - 1]?.error || new Error("Falha no envio do backup.");
+  const actionableError = entries
+    .map((attempt) => attempt.error)
+    .find((error) => getCloudErrorStatus(error) > 0)
+    || lastError;
+  const summary = entries
+    .map((attempt) => `${attempt.method}: ${getCloudErrorDetail(attempt.error)}`)
+    .join(" | ");
+  const error = new Error(summary || lastError.message || "Falha no envio do backup.");
+  error.name = "CloudUploadError";
+  error.cloudStage = stage;
+  error.cloudFileSize = fileSize;
+  error.cloudAttempts = entries.map((attempt) => ({
+    method: attempt.method,
+    status: getCloudErrorStatus(attempt.error),
+    detail: getCloudErrorDetail(attempt.error),
+  }));
+  error.status = getCloudErrorStatus(actionableError);
+  error.code = actionableError?.code || lastError?.code || "";
+  error.cause = lastError;
+  return error;
+}
+
+function getCloudErrorStatus(error) {
+  const direct = Number(error?.status || error?.statusCode || error?.response?.status || 0);
+  if (direct) return direct;
+  try {
+    const tusStatus = Number(error?.originalResponse?.getStatus?.() || 0);
+    if (tusStatus) return tusStatus;
+  } catch (_error) {
+    // A resposta TUS pode não estar mais disponível depois de uma falha de rede.
+  }
+  const causeStatus = Number(error?.cause?.status || error?.cause?.statusCode || 0);
+  if (causeStatus) return causeStatus;
+  const text = [error?.message, error?.details, error?.hint].filter(Boolean).join(" ");
+  const match = text.match(/(?:response|status)(?: code)?\s*[:=]?\s*(\d{3})/i);
+  return Number(match?.[1] || 0);
+}
+
+function getCloudErrorDetail(error) {
+  const parts = [error?.message, error?.details, error?.hint, error?.code];
+  try {
+    const tusBody = error?.originalResponse?.getBody?.();
+    if (tusBody) parts.push(tusBody);
+  } catch (_error) {
+    // Mantém o diagnóstico principal quando o corpo TUS não puder ser lido.
+  }
+  const clean = parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  return clean ? clean.slice(0, 220) : "falha sem detalhes";
+}
+
+function isCloudPayloadError(error) {
+  const status = getCloudErrorStatus(error);
+  const text = getCloudErrorDetail(error);
+  return status === 413 || /payload|too large|request entity too large|maximum size/i.test(text);
 }
 
 function isCloudBackupNotFoundError(error) {
@@ -2058,7 +2303,7 @@ function getProfileStatusText(user) {
 
 function getCloudSyncErrorMessage(error) {
   const code = String(error?.code || "");
-  const status = Number(error?.status || error?.statusCode || error?.response?.status || 0);
+  const status = getCloudErrorStatus(error);
   const message = String(error?.message || "");
   const details = String(error?.details || "");
   const hint = String(error?.hint || "");
@@ -2067,7 +2312,7 @@ function getCloudSyncErrorMessage(error) {
   const stage = String(error?.cloudStage || "").trim();
 
   if (!navigator.onLine) return "Sem internet. Alterações salvas neste aparelho.";
-  if (/bucket not found|noti-backups/i.test(combined)) {
+  if (/bucket(?:\s+noti-backups)?\s+not found|noti-backups[^|]*not found/i.test(combined)) {
     return "Crie o armazenamento executando o arquivo supabase-noti-storage.sql no Supabase.";
   }
   if (/mime type|application\/json|invalid mime/i.test(normalized)) {
@@ -2101,8 +2346,13 @@ function getCloudSyncErrorMessage(error) {
     if (window.location.protocol === "file:") {
       return "Abra pelo GitHub Pages para sincronizar na nuvem. O arquivo local pode bloquear o Supabase.";
     }
+    if (/Edg\//i.test(navigator.userAgent || "")) {
+      return "O Microsoft Edge bloqueou a conexão com a nuvem. No ícone ao lado do endereço, desative a Prevenção de rastreamento para o Noti e tente novamente.";
+    }
     if (stage) {
-      return `A conexão caiu durante ${stage}. O progresso foi preservado; clique em Salvar dados para continuar.`;
+      const size = Number(error?.cloudFileSize || 0);
+      const sizeLabel = size ? ` (${formatFileSize(size)})` : "";
+      return `A conexão caiu durante ${stage}${sizeLabel}. Tente novamente; o backup local foi preservado.`;
     }
     return "A conexão caiu durante o envio. O progresso foi preservado; clique em Salvar dados para continuar.";
   }
