@@ -24,6 +24,170 @@
   --font: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* Firebase account and cross-device sync */
+.firebase-provider-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.firebase-provider-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--editor);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 560;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.firebase-provider-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--text) 24%, var(--line));
+  background: var(--surface-hover);
+  transform: translateY(-1px);
+}
+
+.firebase-provider-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.firebase-provider-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.google-provider-mark {
+  width: 18px;
+  color: #4285f4;
+  font: 700 18px/1 Arial, sans-serif;
+  text-align: center;
+}
+
+.firebase-provider-divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 13px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.firebase-provider-divider::before,
+.firebase-provider-divider::after {
+  height: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.cloud-sync-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: min(720px, 100%);
+  margin: 6px auto 0;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--editor);
+  text-align: left;
+}
+
+.cloud-sync-panel[hidden] {
+  display: none !important;
+}
+
+.cloud-sync-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cloud-sync-copy strong {
+  font-size: 14px;
+  font-weight: 590;
+}
+
+.cloud-sync-copy small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cloud-sync-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.cloud-sync-actions .secondary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.cloud-sync-actions svg {
+  width: 16px;
+  height: 16px;
+}
+
+.cloud-sync-actions button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+@media (max-width: 680px) {
+  .firebase-provider-row {
+    gap: 8px;
+  }
+
+  .firebase-provider-button {
+    min-height: 44px;
+    padding-inline: 12px;
+    border-radius: 14px;
+  }
+
+  .firebase-provider-divider {
+    margin-bottom: 12px;
+  }
+
+  .cloud-sync-panel {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 15px;
+  }
+
+  .cloud-sync-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cloud-sync-actions .secondary-action {
+    justify-content: center;
+    min-width: 0;
+    padding-inline: 10px;
+  }
+}
+
 
 /* Ajustes finais mobile: Nova, editor simples, mover pasta e swipe com icone */
 @media (max-width: 680px) {

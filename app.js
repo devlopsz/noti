@@ -9,7 +9,19 @@ const BACKUP_VERSION = 1;
 const MAX_ATTACHMENT_BYTES = 2.5 * 1024 * 1024;
 const PROFILE_PHOTO_SIZE = 320;
 const MAX_LOCAL_PROFILE_PHOTO_CHARS = 180000;
-const PAGES_UPDATE_ASSETS = ["index.html", "app.js", "styles.css"];
+const FIREBASE_CONFIG = Object.freeze({
+  apiKey: "AIzaSyD2TMZL3oAmTOlf-SbizPkhckNp8jLXUXU",
+  authDomain: "noti-devlopsz.firebaseapp.com",
+  databaseURL: "https://noti-devlopsz-default-rtdb.firebaseio.com",
+  projectId: "noti-devlopsz",
+  storageBucket: "noti-devlopsz.firebasestorage.app",
+  messagingSenderId: "151346742436",
+  appId: "1:151346742436:web:9c6cb618dc16b26342d231",
+});
+const FIREBASE_SYNC_META_KEY = "noti-firebase-sync-meta-v1";
+const FIREBASE_SYNC_CHUNK_SIZE = 450000;
+const FIREBASE_SYNC_DEBOUNCE_MS = 1400;
+const PAGES_UPDATE_ASSETS = ["index.html", "app.js", "firebase-integration.js", "styles.css"];
 const PAGES_UPDATE_CHECK_INTERVAL = 120000;
 const DEFAULT_TOOLBAR_ITEMS = ["theme", "separator-main", "attach", "draw", "drawingBlock", "checklistBlock", "pin", "archive", "delete", "restore", "search", "settings", "account"];
 const TOOLBAR_LABELS = {
@@ -328,6 +340,19 @@ const shouldShowFirstVisitGreeting = !localStorage.getItem(FIRST_VISIT_KEY)
   && !localStorage.getItem(STORAGE_KEY)
   && !localStorage.getItem(USER_STORE_KEY)
   && !localStorage.getItem(PREFS_KEY);
+let firebaseApp = null;
+let firebaseAuth = null;
+let firebaseDatabase = null;
+let firebaseAuthUser = null;
+let firebaseAuthResolved = false;
+let firebaseCloudReady = false;
+let firebaseApplyingSnapshot = false;
+let firebaseSyncTimer = 0;
+let firebaseSyncInFlight = null;
+let firebaseSyncQueued = false;
+let firebasePendingProfile = null;
+let firebaseSyncState = "offline";
+let firebaseSyncMessage = "Entre para sincronizar seus dados.";
 const state = loadState();
 let users = loadUsers();
 let currentUserId = localStorage.getItem(CURRENT_USER_KEY) || "";
@@ -538,6 +563,8 @@ const elements = {
   closeAccountModal: $("#closeAccountModal"),
   loginTabButton: $("#loginTabButton"),
   signupTabButton: $("#signupTabButton"),
+  googleAuthButton: $("#googleAuthButton"),
+  githubAuthButton: $("#githubAuthButton"),
   loginForm: $("#loginForm"),
   signupForm: $("#signupForm"),
   loginIdentifierInput: $("#loginIdentifierInput"),
@@ -569,6 +596,10 @@ const elements = {
   settingsPhoneInput: $("#settingsPhoneInput"),
   settingsCountrySelect: $("#settingsCountrySelect"),
   profileStatus: $("#profileStatus"),
+  cloudSyncPanel: $("#cloudSyncPanel"),
+  cloudSyncDetail: $("#cloudSyncDetail"),
+  cloudSaveButton: $("#cloudSaveButton"),
+  cloudLoadButton: $("#cloudLoadButton"),
   profileLoginButton: $("#profileLoginButton"),
   saveProfileButton: $("#saveProfileButton"),
   profileEditDialog: $("#profileEditDialog"),
@@ -624,6 +655,7 @@ function init() {
   render();
   setupAutoTooltips();
   setupPagesUpdateChecker();
+  initializeFirebaseIntegration();
   localStorage.setItem(FIRST_VISIT_KEY, "true");
 }
 
@@ -655,6 +687,8 @@ function bindEvents() {
   elements.signupTabButton.addEventListener("click", () => setActiveAccountPanel("signup"));
   elements.loginForm.addEventListener("submit", handleLogin);
   elements.signupForm.addEventListener("submit", handleSignup);
+  elements.googleAuthButton?.addEventListener("click", () => handleFirebaseProviderLogin("google"));
+  elements.githubAuthButton?.addEventListener("click", () => handleFirebaseProviderLogin("github"));
   elements.signupUsernameInput.addEventListener("input", () => keepUsernamePrefix(elements.signupUsernameInput));
   elements.signupUsernameInput.addEventListener("blur", () => normalizeUsernameInput(elements.signupUsernameInput));
   elements.signupPhotoInput.addEventListener("change", handleSignupPhoto);
@@ -662,6 +696,8 @@ function bindEvents() {
     button.addEventListener("click", () => setActiveSettingsTab(button.dataset.settingsTab));
   });
   elements.profileLoginButton.addEventListener("click", openProfileAccountEntry);
+  elements.cloudSaveButton?.addEventListener("click", saveFirebaseDataManually);
+  elements.cloudLoadButton?.addEventListener("click", loadFirebaseDataManually);
   elements.editProfileButton.addEventListener("click", openProfileEditDialog);
   elements.cancelProfileEditButton.addEventListener("click", closeProfileEditDialog);
   elements.saveProfileButton.addEventListener("click", saveProfileSettings);
@@ -1199,12 +1235,13 @@ function normalizeState(rawState) {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  markFirebaseDataDirty();
 }
 
 function getProfileStatusText(user) {
-  return user
-    ? "Conta local ativa neste navegador."
-    : "Entre para acessar seu perfil local neste navegador.";
+  if (!user) return "Entre para acessar seu perfil e sincronizar seus dados.";
+  if (firebaseAuthUser && firebaseAuthUser.uid === user.id) return firebaseSyncMessage;
+  return "Conta local ativa. Entre com o mesmo e-mail para sincronizar entre dispositivos.";
 }
 
 function buildBackupProfile(user) {
@@ -1216,6 +1253,8 @@ function buildBackupProfile(user) {
     phone: user.phone || "",
     phoneCountry: getPhoneCountry(user.phoneCountry || "BR").code,
     photo: user.photo || "",
+    cloudAccount: Boolean(user.cloudAccount),
+    providerIds: Array.isArray(user.providerIds) ? user.providerIds.slice() : [],
     timeGameScore: normalizeNumber(user.timeGameScore, 0),
     notisualScore: normalizeNumber(user.notisualScore, 0),
     createdAt: Number.isFinite(user.createdAt) ? user.createdAt : Date.now(),
@@ -8103,6 +8142,7 @@ function loadPreferences() {
 
 function savePreferences() {
   localStorage.setItem(PREFS_KEY, JSON.stringify(preferences));
+  markFirebaseDataDirty();
 }
 
 function applyPreferences() {
@@ -8598,7 +8638,7 @@ function loadUsers() {
     const parsed = JSON.parse(localStorage.getItem(USER_STORE_KEY) || "[]");
     if (!Array.isArray(parsed)) return [];
     return parsed
-      .filter((user) => user?.id && user?.email && user?.username)
+      .filter((user) => user?.id && user?.username && (user?.email || user?.cloudAccount))
       .map((user) => {
         const phoneParts = parsePhoneParts(user.phone, user.phoneCountry);
         return {
@@ -8610,6 +8650,8 @@ function loadUsers() {
           phoneCountry: phoneParts.countryCode,
           password: typeof user.password === "string" ? user.password : "",
           photo: typeof user.photo === "string" ? user.photo : "",
+          cloudAccount: Boolean(user.cloudAccount),
+          providerIds: Array.isArray(user.providerIds) ? user.providerIds.filter((value) => typeof value === "string") : [],
           timeGameScore: normalizeNumber(user.timeGameScore, 0),
           notisualScore: normalizeNumber(user.notisualScore, 0),
           createdAt: Number.isFinite(user.createdAt) ? user.createdAt : Date.now(),
@@ -8644,6 +8686,7 @@ function saveUsers() {
   }
 
   if (!saved) console.warn("Não foi possível salvar o perfil neste navegador.", lastError);
+  if (saved) markFirebaseDataDirty();
   return saved;
 }
 
@@ -8704,7 +8747,9 @@ function setActiveAccountPanel(panel) {
   elements.loginForm.hidden = isSignup;
   elements.signupForm.hidden = !isSignup;
   const hint = document.querySelector("#accountModeHint");
-  if (hint) hint.textContent = isSignup ? "Crie uma conta local neste navegador." : "Entre na conta salva neste navegador.";
+  if (hint) hint.textContent = isSignup
+    ? "Crie sua conta para sincronizar o Noti em todos os dispositivos."
+    : "Entre para acessar suas notas e preferências.";
   const title = document.querySelector("#accountModalTitle");
   if (title) title.textContent = isSignup ? "Criar conta" : "Entrar no Noti";
 }
@@ -8737,7 +8782,7 @@ async function handleSignupPhoto() {
   }
 }
 
-function handleSignup(event) {
+async function handleSignup(event) {
   event.preventDefault();
   const name = elements.signupNameInput.value.trim();
   const username = normalizeUsername(elements.signupUsernameInput.value);
@@ -8750,6 +8795,10 @@ function handleSignup(event) {
     showToast("Preencha nome, @usuário, e-mail e senha com pelo menos 6 caracteres");
     return;
   }
+  if (!firebaseAuth) {
+    showToast("A conexão com o Firebase ainda não está disponível");
+    return;
+  }
 
   const emailUser = users.find((user) => user.email === email) || null;
   const usernameUser = users.find((user) => user.username.toLowerCase() === username.toLowerCase()) || null;
@@ -8758,71 +8807,43 @@ function handleSignup(event) {
     return;
   }
 
-  const existingUser = emailUser;
-  const existingIndex = existingUser ? users.findIndex((user) => user.id === existingUser.id) : -1;
-  if (existingUser?.password) {
-    showToast("E-mail ou usuário já cadastrado neste navegador");
-    return;
-  }
-
-  const previousCurrentUserId = currentUserId;
-  const previousUser = existingUser ? { ...existingUser } : null;
   const now = Date.now();
-  let user;
+  firebasePendingProfile = {
+    ...(emailUser ? clonePlainData(emailUser) : {}),
+    name,
+    username,
+    email,
+    phone,
+    phoneCountry,
+    password: "",
+    photo: currentSignupPhoto || emailUser?.photo || "",
+    timeGameScore: normalizeNumber(emailUser?.timeGameScore, 0),
+    notisualScore: normalizeNumber(emailUser?.notisualScore, 0),
+    createdAt: Number.isFinite(emailUser?.createdAt) ? emailUser.createdAt : now,
+    updatedAt: now,
+  };
 
-  if (existingUser) {
-    user = existingUser;
-    Object.assign(user, {
-      name,
-      username,
-      email,
-      phone,
-      phoneCountry,
-      password,
-      photo: currentSignupPhoto || user.photo || "",
-      timeGameScore: normalizeNumber(user.timeGameScore, 0),
-      notisualScore: normalizeNumber(user.notisualScore, 0),
-      updatedAt: now,
-    });
-  } else {
-    user = {
-      id: cryptoId(),
-      name,
-      username,
-      email,
-      phone,
-      phoneCountry,
-      password,
-      photo: currentSignupPhoto,
-      timeGameScore: 0,
-      notisualScore: 0,
-      createdAt: now,
-      updatedAt: now,
-    };
-    users.push(user);
+  setFirebaseAuthBusy(true);
+  try {
+    const credential = await firebaseAuth.createUserWithEmailAndPassword(email, password);
+    await credential.user.updateProfile({ displayName: name });
+    elements.signupForm.reset();
+    elements.signupUsernameInput.value = "@";
+    elements.signupCountrySelect.value = "BR";
+    currentSignupPhoto = "";
+    renderAvatar(elements.signupPhotoPreview, null);
+    closeModals();
+    showToast("Conta criada e conectada");
+  } catch (error) {
+    firebasePendingProfile = null;
+    console.warn("Cadastro no Firebase falhou.", error);
+    showToast(formatFirebaseAuthError(error));
+  } finally {
+    setFirebaseAuthBusy(false);
   }
-
-  currentUserId = user.id;
-  if (!saveUsers()) {
-    if (existingUser && previousUser) users[existingIndex] = previousUser;
-    else users = users.filter((candidate) => candidate.id !== user.id);
-    currentUserId = previousCurrentUserId;
-    showToast("Não há espaço local suficiente para criar a conta");
-    return;
-  }
-
-  localStorage.setItem(CURRENT_USER_KEY, currentUserId);
-  elements.signupForm.reset();
-  elements.signupUsernameInput.value = "@";
-  elements.signupCountrySelect.value = "BR";
-  currentSignupPhoto = "";
-  renderAvatar(elements.signupPhotoPreview, null);
-  refreshAccountUi();
-  closeModals();
-  showToast(existingUser ? "Conta local ativada" : "Conta local criada");
 }
 
-function handleLogin(event) {
+async function handleLogin(event) {
   event.preventDefault();
   const identifier = elements.loginIdentifierInput.value.trim().toLowerCase();
   const password = elements.loginPasswordInput.value;
@@ -8830,28 +8851,61 @@ function handleLogin(event) {
     candidate.email === identifier
     || candidate.username.toLowerCase() === normalizeUsername(identifier).toLowerCase()
   ));
-
-  if (localUser && !localUser.password) {
-    showToast("Ative esta conta local em Criar ID usando o mesmo e-mail");
+  const email = identifier.includes("@") && !identifier.startsWith("@") ? identifier : localUser?.email || "";
+  if (!email) {
+    showToast("Neste dispositivo, entre usando o e-mail da conta");
     return;
   }
-  if (!localUser || localUser.password !== password) {
-    showToast("Login ou senha incorretos");
+  if (!firebaseAuth) {
+    if (localUser && !localUser.cloudAccount && localUser.password === password) connectLegacyLocalUser(localUser);
+    else showToast("A conexão com o Firebase ainda não está disponível");
     return;
   }
 
+  firebasePendingProfile = localUser ? clonePlainData(localUser) : null;
+  setFirebaseAuthBusy(true);
+  try {
+    await firebaseAuth.signInWithEmailAndPassword(email, password);
+    elements.loginForm.reset();
+    closeModals();
+    showToast("Conta conectada");
+  } catch (error) {
+    firebasePendingProfile = null;
+    if (localUser && !localUser.cloudAccount && localUser.password === password) {
+      connectLegacyLocalUser(localUser);
+      showToast("Conta local conectada. Use Salvar dados para conectá-la à nuvem.");
+    } else {
+      console.warn("Login no Firebase falhou.", error);
+      showToast(formatFirebaseAuthError(error));
+    }
+  } finally {
+    setFirebaseAuthBusy(false);
+  }
+}
+
+function connectLegacyLocalUser(localUser) {
   currentUserId = localUser.id;
   localStorage.setItem(CURRENT_USER_KEY, currentUserId);
   elements.loginForm.reset();
   refreshAccountUi();
   closeModals();
-  showToast("Conta local conectada");
+  setFirebaseSyncStatus("offline", "Conta local ativa. Conecte-a para sincronizar entre dispositivos.");
 }
 
-function logoutUser() {
+async function logoutUser() {
+  if (firebaseAuthUser && firebaseAuth) {
+    try {
+      await firebaseAuth.signOut();
+    } catch (error) {
+      console.warn("Não foi possível encerrar a sessão do Firebase.", error);
+    }
+  }
+  firebaseAuthUser = null;
+  firebaseCloudReady = false;
   clearCurrentSessionLocally();
   renderSettings();
-  showToast("Você saiu da conta local");
+  setFirebaseSyncStatus("offline", "Entre para sincronizar seus dados entre dispositivos.");
+  showToast("Você saiu da conta");
 }
 function openSettingsModal(tab = "profile") {
   if (isMobileLayout()) mobileSettingsReturnScreen = mobileScreen === "editor" ? "editor" : mobileScreen === "list" ? "list" : "folders";
@@ -8895,6 +8949,7 @@ function renderSettingsProfile() {
   elements.profileLoginButton.hidden = Boolean(user);
   elements.editProfileButton.hidden = !user;
   elements.logoutButton.hidden = !user;
+  renderFirebaseSyncUi();
 }
 
 function openProfileEditDialog() {
@@ -8907,6 +8962,10 @@ function openProfileEditDialog() {
   elements.settingsNameInput.value = user.name || "";
   elements.settingsUsernameInput.value = user.username || "@";
   elements.settingsEmailInput.value = user.email || "";
+  elements.settingsEmailInput.readOnly = Boolean(firebaseAuthUser?.email && firebaseAuthUser.uid === user.id);
+  elements.settingsEmailInput.title = elements.settingsEmailInput.readOnly
+    ? "O e-mail de acesso é gerenciado pelo Firebase"
+    : "E-mail da conta";
   const phoneParts = parsePhoneParts(user.phone, user.phoneCountry);
   elements.settingsCountrySelect.value = phoneParts.countryCode;
   elements.settingsPhoneInput.value = phoneParts.number;
@@ -8973,6 +9032,14 @@ async function saveProfileSettings() {
     Object.assign(user, previousUser);
     showToast("Não há espaço local suficiente para atualizar o perfil");
     return;
+  }
+
+  if (firebaseAuthUser?.uid === user.id) {
+    try {
+      await firebaseAuthUser.updateProfile({ displayName: name });
+    } catch (error) {
+      console.warn("O perfil foi salvo, mas o nome do Firebase não foi atualizado.", error);
+    }
   }
 
   refreshAccountUi();
