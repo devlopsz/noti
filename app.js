@@ -2401,6 +2401,9 @@ function getAuthErrorMessage(error) {
   const message = rawMessage.toLowerCase();
   const retryMatch = message.match(/after\s+(\d+)\s+seconds?/i);
   const status = Number(error?.status || error?.statusCode || 0);
+  if (message.includes("email rate limit exceeded")) {
+    return "O limite de e-mails de confirmação foi atingido. Aguarde até 1 hora; se a conta já foi criada, use Entrar.";
+  }
   if (retryMatch || status === 429 || message.includes("for security purposes")) {
     const seconds = Math.max(1, normalizeNumber(retryMatch?.[1], 20));
     return `Aguarde ${seconds} segundos antes de tentar novamente.`;
