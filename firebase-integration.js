@@ -239,7 +239,7 @@ async function resolveFirebaseInitialSync(uid, transitionId) {
     return;
   }
 
-  applyFirebaseSnapshot(remote);
+  await applyFirebaseSnapshot(remote);
   updateFirebaseSyncMeta(uid, {
     lastSyncedAt: remoteUpdatedAt || Date.now(),
     dirtyAt: 0,
@@ -379,12 +379,12 @@ async function downloadFirebaseSnapshot(uid) {
   return payload;
 }
 
-function applyFirebaseSnapshot(payload) {
+async function applyFirebaseSnapshot(payload) {
   const nextState = extractBackupState(payload);
   const nextPreferences = extractBackupPreferences(payload);
   firebaseApplyingSnapshot = true;
   try {
-    restoreBackupData(nextState, nextPreferences);
+    await restoreBackupData(nextState, nextPreferences);
     const current = getCurrentUser();
     if (current && payload.profile && typeof payload.profile === "object") {
       const remoteProfile = payload.profile;
@@ -526,7 +526,7 @@ async function loadFirebaseDataManually() {
       showToast("Nenhum backup encontrado nesta conta");
       return;
     }
-    applyFirebaseSnapshot(payload);
+    await applyFirebaseSnapshot(payload);
     updateFirebaseSyncMeta(firebaseAuthUser.uid, { lastSyncedAt: payload.cloudUpdatedAt || Date.now(), dirtyAt: 0 });
     setFirebaseSyncStatus("synced", buildFirebaseSyncedMessage(payload.cloudUpdatedAt));
     showToast("Dados sincronizados neste dispositivo");

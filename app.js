@@ -6,6 +6,10 @@ const PREFS_KEY = "noti-preferences-v1";
 const FIRST_VISIT_KEY = "noti-first-visit-seen-v1";
 const BACKUP_TYPE = "noti-backup";
 const BACKUP_VERSION = 1;
+const STATE_DB_NAME = "noti-state-v1";
+const STATE_DB_STORE = "snapshots";
+const STATE_DB_KEY = "current";
+const STATE_DB_MARKER = "__noti_indexeddb_state_v1__";
 const MAX_ATTACHMENT_BYTES = 2.5 * 1024 * 1024;
 const PROFILE_PHOTO_SIZE = 320;
 const MAX_LOCAL_PROFILE_PHOTO_CHARS = 180000;
@@ -353,6 +357,9 @@ let firebaseSyncQueued = false;
 let firebasePendingProfile = null;
 let firebaseSyncState = "offline";
 let firebaseSyncMessage = "Entre para sincronizar seus dados.";
+let statePersistenceInFlight = null;
+let pendingIndexedState = "";
+let stateStorageMode = localStorage.getItem(STORAGE_KEY) === STATE_DB_MARKER ? "indexeddb" : "local";
 const state = loadState();
 let users = loadUsers();
 let currentUserId = localStorage.getItem(CURRENT_USER_KEY) || "";
@@ -679,9 +686,10 @@ const elements = {
   noteCardTemplate: $("#noteCardTemplate"),
 };
 
-init();
+void init();
 
-function init() {
+async function init() {
+  await hydrateStateFromIndexedDb();
   applyTheme(preferences.theme);
   applyPreferences();
   setupMobileLayout();
@@ -1209,7 +1217,7 @@ function enableMobileNoteEditing() {
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
 
-  if (saved) {
+  if (saved && saved !== STATE_DB_MARKER) {
     try {
       const parsed = JSON.parse(saved);
       return normalizeState(parsed);
@@ -1219,6 +1227,106 @@ function loadState() {
   }
 
   return normalizeState(getDefaultInitialState());
+}
+
+async function hydrateStateFromIndexedDb() {
+  if (localStorage.getItem(STORAGE_KEY) !== STATE_DB_MARKER) return;
+
+  try {
+    const serialized = await readIndexedState();
+    if (!serialized) throw new Error("Estado salvo no IndexedDB não foi encontrado.");
+    const restored = normalizeState(JSON.parse(serialized));
+    state.folders = restored.folders;
+    state.notes = restored.notes;
+    stateStorageMode = "indexeddb";
+  } catch (error) {
+    console.warn("Não foi possível carregar as notas do IndexedDB.", error);
+    stateStorageMode = "local";
+    localStorage.removeItem(STORAGE_KEY);
+  }
+}
+
+function openStateDatabase() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("IndexedDB indisponível neste navegador."));
+      return;
+    }
+
+    const request = window.indexedDB.open(STATE_DB_NAME, 1);
+    request.addEventListener("upgradeneeded", () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(STATE_DB_STORE)) database.createObjectStore(STATE_DB_STORE);
+    });
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error || new Error("Não foi possível abrir o IndexedDB.")));
+    request.addEventListener("blocked", () => reject(new Error("O IndexedDB está bloqueado por outra aba do Noti.")));
+  });
+}
+
+async function readIndexedState() {
+  const database = await openStateDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(STATE_DB_STORE, "readonly");
+      const request = transaction.objectStore(STATE_DB_STORE).get(STATE_DB_KEY);
+      request.addEventListener("success", () => resolve(typeof request.result === "string" ? request.result : ""));
+      request.addEventListener("error", () => reject(request.error || new Error("Não foi possível ler o backup local.")));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+async function writeIndexedState(serialized) {
+  const database = await openStateDatabase();
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(STATE_DB_STORE, "readwrite");
+      transaction.objectStore(STATE_DB_STORE).put(serialized, STATE_DB_KEY);
+      transaction.addEventListener("complete", resolve);
+      transaction.addEventListener("error", () => reject(transaction.error || new Error("Não foi possível salvar as notas.")));
+      transaction.addEventListener("abort", () => reject(transaction.error || new Error("O salvamento das notas foi cancelado.")));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function isStorageQuotaError(error) {
+  return error?.name === "QuotaExceededError"
+    || error?.name === "NS_ERROR_DOM_QUOTA_REACHED"
+    || Number(error?.code) === 22
+    || Number(error?.code) === 1014
+    || /quota|storage.*full|espaço/i.test(String(error?.message || ""));
+}
+
+async function persistStateInIndexedDb(serialized) {
+  await writeIndexedState(serialized);
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.setItem(STORAGE_KEY, STATE_DB_MARKER);
+  stateStorageMode = "indexeddb";
+}
+
+function queueIndexedStatePersistence(serialized) {
+  pendingIndexedState = serialized;
+  if (statePersistenceInFlight) return statePersistenceInFlight;
+
+  const flushPendingState = async () => {
+    while (pendingIndexedState) {
+      const nextState = pendingIndexedState;
+      pendingIndexedState = "";
+      await persistStateInIndexedDb(nextState);
+    }
+  };
+
+  statePersistenceInFlight = flushPendingState().finally(() => {
+    statePersistenceInFlight = null;
+    if (pendingIndexedState) return queueIndexedStatePersistence(pendingIndexedState);
+    return undefined;
+  });
+  statePersistenceInFlight.catch((error) => console.error("Não foi possível salvar as notas no IndexedDB.", error));
+  return statePersistenceInFlight;
 }
 
 function getDefaultInitialState() {
@@ -1318,8 +1426,23 @@ function normalizeState(rawState) {
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  const serialized = JSON.stringify(state);
+  let persistence;
+
+  if (stateStorageMode === "indexeddb") {
+    persistence = queueIndexedStatePersistence(serialized);
+  } else {
+    try {
+      localStorage.setItem(STORAGE_KEY, serialized);
+      persistence = Promise.resolve();
+    } catch (error) {
+      if (!isStorageQuotaError(error)) throw error;
+      persistence = queueIndexedStatePersistence(serialized);
+    }
+  }
+
   markFirebaseDataDirty();
+  return persistence;
 }
 
 function getProfileStatusText(user) {
@@ -9849,7 +9972,7 @@ async function handleBackupRestore() {
   if (!file) return;
 
   try {
-    const parsed = JSON.parse(await readFileAsText(file));
+    const parsed = parseBackupJson(await readFileAsText(file));
     const nextState = extractBackupState(parsed);
     const nextPreferences = extractBackupPreferences(parsed);
     const merge = buildBackupMerge(nextState);
@@ -9858,20 +9981,47 @@ async function handleBackupRestore() {
     );
     if (!shouldRestore) return;
 
-    restoreBackupData(merge.state, nextPreferences);
+    await restoreBackupData(merge.state, nextPreferences);
     showToast(`Backup recuperado: ${merge.stats.added} adicionadas, ${merge.stats.replaced} substituídas`);
   } catch (error) {
-    console.warn("Backup inválido.", error);
-    showToast("Arquivo de backup inválido");
+    console.warn("Não foi possível recuperar o backup.", error);
+    showToast(getBackupRestoreErrorMessage(error));
   }
 }
 
+function parseBackupJson(content) {
+  const source = String(content || "").replace(/^\uFEFF/, "").trim();
+  if (!source) throw new Error("O arquivo de backup está vazio.");
+  let parsed = JSON.parse(source);
+  if (typeof parsed === "string") parsed = JSON.parse(parsed.replace(/^\uFEFF/, "").trim());
+  return parsed;
+}
+
+function getBackupRestoreErrorMessage(error) {
+  if (isStorageQuotaError(error)) return "O navegador está sem espaço para recuperar este backup";
+  if (error instanceof SyntaxError) return "O arquivo selecionado não contém um JSON válido";
+  if (/backup sem notas|arquivo de backup está vazio/i.test(String(error?.message || ""))) {
+    return "Este arquivo não contém um backup de notas do Noti";
+  }
+  return "Não foi possível recuperar este backup";
+}
+
 function extractBackupState(payload) {
-  const candidate = payload?.type === BACKUP_TYPE ? payload.state : payload?.state || payload;
-  if (!candidate || !Array.isArray(candidate.folders) || !Array.isArray(candidate.notes)) {
+  const candidates = [
+    payload?.state,
+    payload?.backup?.state,
+    payload?.payload?.state,
+    payload?.data?.state,
+    payload,
+  ];
+  const candidate = candidates.find((value) => value && Array.isArray(value.notes));
+  if (!candidate) {
     throw new Error("Backup sem notas ou pastas");
   }
-  return normalizeState(candidate);
+  return normalizeState({
+    ...candidate,
+    folders: Array.isArray(candidate.folders) ? candidate.folders : [],
+  });
 }
 
 function extractBackupPreferences(payload) {
@@ -9975,7 +10125,7 @@ function mapBackupFolderId(folderId, folderIdMap, usedFolderIds) {
   return usedFolderIds.has(currentId) ? currentId : "";
 }
 
-function restoreBackupData(nextState, nextPreferences = null) {
+async function restoreBackupData(nextState, nextPreferences = null) {
   const previousFolders = state.folders;
   const previousNotes = state.notes;
   const previousPreferences = preferences;
@@ -9994,9 +10144,15 @@ function restoreBackupData(nextState, nextPreferences = null) {
   drawingRedoStacks.clear();
 
   try {
-    saveState();
+    await saveState();
     if (nextPreferences) {
-      savePreferences();
+      try {
+        savePreferences();
+      } catch (error) {
+        if (!isStorageQuotaError(error)) throw error;
+        await persistStateInIndexedDb(JSON.stringify(state));
+        savePreferences();
+      }
       localStorage.setItem(THEME_KEY, preferences.theme);
       applyTheme(preferences.theme);
       applyPreferences();
@@ -10005,6 +10161,9 @@ function restoreBackupData(nextState, nextPreferences = null) {
     state.folders = previousFolders;
     state.notes = previousNotes;
     preferences = previousPreferences;
+    await persistStateInIndexedDb(JSON.stringify(state)).catch((restoreError) => {
+      console.error("Não foi possível restaurar o estado anterior após a falha.", restoreError);
+    });
     throw error;
   }
 
