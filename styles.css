@@ -11616,3 +11616,566 @@ body.custom-cursor .draw-tool-card.dragging .draw-tool-head {
     display: none !important;
   }
 }
+
+/* Pagina de autenticacao */
+body.account-page-open {
+  overflow: hidden;
+}
+
+body.account-page-open .modal-layer {
+  display: block;
+  padding: 0;
+}
+
+body.account-page-open .modal-scrim {
+  display: none;
+}
+
+.account-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100svh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: var(--surface) !important;
+  box-shadow: none !important;
+}
+
+.account-modal[hidden],
+.auth-view[hidden],
+.auth-step-form[hidden] {
+  display: none !important;
+}
+
+.account-modal .account-tabs,
+.account-modal .auth-legacy-tabs {
+  display: none !important;
+}
+
+.account-modal .modal-close {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 4;
+  width: 40px;
+  height: 40px;
+  border: 1px solid color-mix(in srgb, var(--surface) 24%, transparent);
+  border-radius: 50% !important;
+  background: color-mix(in srgb, var(--text) 72%, transparent) !important;
+  color: var(--surface) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.account-modal .auth-shell {
+  display: grid;
+  grid-template-columns: minmax(430px, 49%) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.account-content {
+  order: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  max-height: none !important;
+  padding: clamp(38px, 7vh, 78px) clamp(34px, 7vw, 112px) 24px;
+  overflow-y: auto;
+  border-radius: 0 !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+
+.account-content-inner {
+  display: grid;
+  align-content: center;
+  width: min(430px, 100%);
+  min-height: calc(100% - 54px);
+  margin: auto;
+}
+
+.account-heading {
+  margin-bottom: 36px;
+}
+
+.account-heading h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(34px, 3.2vw, 50px);
+  font-weight: 430;
+  line-height: 1.04;
+  letter-spacing: 0;
+}
+
+.account-heading p {
+  margin: 14px 0 0;
+  color: var(--text-muted) !important;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.auth-provider-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.account-modal .firebase-provider-button {
+  position: relative;
+  width: 100%;
+  min-height: 50px;
+  border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
+  border-radius: 999px;
+  padding: 0 22px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.account-modal .firebase-provider-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+}
+
+.account-modal .firebase-provider-button svg,
+.account-modal .google-provider-mark {
+  position: absolute;
+  left: 20px;
+  width: 19px;
+  height: 19px;
+}
+
+.account-modal .google-provider-mark {
+  display: grid;
+  place-items: center;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.account-switch {
+  margin: 24px 0 0;
+  color: var(--text-muted) !important;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.account-switch button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text) !important;
+  font: inherit;
+  font-weight: 650;
+}
+
+.account-switch button:hover {
+  color: var(--accent) !important;
+}
+
+.auth-step-form,
+.auth-step {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-field-label {
+  color: var(--text-muted) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
+
+.auth-input-shell {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 58px;
+  border: 1px solid color-mix(in srgb, var(--text) 28%, transparent);
+  border-radius: 17px;
+  background: transparent;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.auth-input-shell:focus-within {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.account-modal .account-form .auth-input-shell input {
+  flex: 1;
+  min-width: 0;
+  min-height: 56px;
+  border: 0 !important;
+  border-radius: 17px !important;
+  padding: 0 10px 0 18px;
+  outline: 0;
+  background: transparent !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+  font-size: 16px;
+  font-weight: 430;
+}
+
+.account-modal .account-form input::placeholder {
+  color: var(--text-soft);
+  opacity: 1;
+}
+
+.auth-input-action {
+  display: grid;
+  flex: 0 0 38px;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-right: 9px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-hover);
+  color: var(--text-muted);
+}
+
+.auth-input-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.auth-input-action svg {
+  width: 18px;
+  height: 18px;
+}
+
+.auth-step-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.account-modal .auth-step-actions button {
+  min-height: 48px;
+  border-radius: 999px !important;
+  font-size: 14px;
+  font-weight: 560;
+}
+
+.account-modal .auth-step-actions .secondary-action {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+}
+
+.account-modal .auth-step-actions .primary-action {
+  border: 1px solid var(--accent);
+  background: var(--accent) !important;
+  color: #fff !important;
+}
+
+.account-modal .auth-step-actions button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.signup-name-step {
+  justify-items: center;
+}
+
+.signup-photo-card {
+  position: relative;
+  display: block !important;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 14px;
+  cursor: pointer;
+}
+
+.signup-photo-card > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-hover);
+  color: var(--text-muted);
+}
+
+.signup-photo-card > span:first-child svg {
+  width: 34px;
+  height: 34px;
+}
+
+.signup-photo-card .signup-photo-badge {
+  position: absolute;
+  right: -2px;
+  bottom: 2px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+}
+
+.signup-photo-card .signup-photo-badge svg {
+  width: 15px;
+  height: 15px;
+}
+
+.social-profile-step {
+  justify-items: stretch;
+}
+
+.social-profile-step .signup-photo-card {
+  justify-self: center;
+}
+
+.social-profile-identity {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  margin: -2px 0 18px;
+  text-align: center;
+}
+
+.social-profile-identity strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 520;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.social-profile-identity span {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.social-profile-identity small {
+  margin-top: 5px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 520;
+}
+
+.account-modal .account-form input.auth-name-input:not([type="checkbox"]) {
+  width: 100%;
+  min-height: 68px;
+  border: 0 !important;
+  border-bottom: 1px solid var(--line) !important;
+  border-radius: 0 !important;
+  padding: 0 2px;
+  outline: 0;
+  background: transparent !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+  text-align: center;
+  font-size: clamp(28px, 3vw, 38px);
+  font-weight: 430;
+}
+
+.auth-field-status {
+  flex: 0 0 auto;
+  max-width: 126px;
+  margin-right: 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: right;
+}
+
+.auth-field-status.available {
+  color: #21a451;
+}
+
+.auth-field-status.unavailable {
+  color: var(--danger);
+}
+
+.account-legal {
+  width: min(560px, 100%);
+  margin: 28px auto 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.account-legal a {
+  color: var(--text);
+  font-weight: 560;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.account-visual {
+  order: 2;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 0;
+  border-radius: 0 !important;
+  padding: clamp(46px, 7vw, 104px);
+  overflow: hidden;
+  background: var(--text) !important;
+  color: var(--surface) !important;
+}
+
+.account-visual::after {
+  position: absolute;
+  right: -18%;
+  bottom: -24%;
+  width: min(56vw, 760px);
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in srgb, var(--surface) 14%, transparent);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+
+.account-brand-lockup {
+  position: relative;
+  z-index: 1;
+  width: min(150px, 45%);
+}
+
+.account-visual .account-brand-mark {
+  width: 100%;
+  max-width: 150px;
+  margin: 0 0 7px;
+}
+
+.account-visual .account-brand-mark + span {
+  display: block;
+  width: 100%;
+  max-width: 150px;
+  color: inherit;
+  text-align: center;
+  opacity: 0.72;
+  font-size: 12px;
+}
+
+.account-visual h2 {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  max-width: 560px;
+  color: inherit;
+  font-size: clamp(42px, 5.2vw, 82px);
+  font-weight: 440;
+  line-height: 0.98;
+}
+
+.account-visual p {
+  position: relative;
+  z-index: 1;
+  max-width: 320px;
+  margin: 0;
+  color: inherit;
+  opacity: 0.68;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+@media (max-width: 920px) {
+  .account-modal .auth-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .account-visual {
+    display: none;
+  }
+
+  .account-content {
+    padding: max(62px, env(safe-area-inset-top)) 24px max(20px, env(safe-area-inset-bottom));
+  }
+
+  .account-content-inner {
+    min-height: auto;
+    margin-block: auto;
+  }
+
+  .account-modal .modal-close {
+    top: max(14px, env(safe-area-inset-top));
+    right: 14px;
+    border-color: var(--line);
+    background: var(--surface-hover) !important;
+    color: var(--text) !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .account-content {
+    padding-inline: 20px;
+  }
+
+  .account-heading {
+    margin-bottom: 28px;
+  }
+
+  .account-heading h2 {
+    max-width: calc(100% - 44px);
+    font-size: 34px;
+  }
+
+  .account-modal .firebase-provider-button {
+    min-height: 52px;
+  }
+
+  .auth-step-actions {
+    grid-template-columns: 1fr 1.2fr;
+  }
+
+  .account-legal {
+    margin-top: 24px;
+  }
+}
+
+/* Mantem todo o conteudo do Perfil dentro do modal de configuracoes. */
+@media (min-width: 681px) {
+  .settings-modal {
+    overflow: hidden !important;
+  }
+
+  .settings-main {
+    min-height: 0;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+  }
+
+  .settings-panel[data-settings-panel="profile"] {
+    min-height: max-content;
+  }
+
+  .settings-panel[data-settings-panel="profile"] .profile-dashboard {
+    padding-bottom: 24px;
+  }
+
+  .settings-panel[data-settings-panel="profile"] .cloud-sync-panel {
+    flex: 0 0 auto;
+    margin-bottom: 0;
+  }
+}

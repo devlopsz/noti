@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Checklist OS: notas, checklists, pastas, fixados e lixeira com salvamento local."
+      content="Noti: notas, checklists, compras, metas e organização sincronizada entre dispositivos."
     />
     <title>Noti.</title>
     <link id="favicon" rel="icon" type="image/x-icon" href="assets/white-icon-noti.ico" />
@@ -112,6 +112,21 @@
       </symbol>
       <symbol id="icon-x" viewBox="0 0 24 24">
         <path d="m6 6 12 12M18 6 6 18" />
+      </symbol>
+      <symbol id="icon-mail" viewBox="0 0 24 24">
+        <rect x="3" y="5" width="18" height="14" rx="3" />
+        <path d="m4 7 8 6 8-6" />
+      </symbol>
+      <symbol id="icon-arrow-right" viewBox="0 0 24 24">
+        <path d="M5 12h14M14 7l5 5-5 5" />
+      </symbol>
+      <symbol id="icon-eye" viewBox="0 0 24 24">
+        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+        <circle cx="12" cy="12" r="2.5" />
+      </symbol>
+      <symbol id="icon-camera" viewBox="0 0 24 24">
+        <path d="M4 7h4l1.5-2h5L16 7h4a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+        <circle cx="12" cy="13" r="4" />
       </symbol>
       <symbol id="icon-restore" viewBox="0 0 24 24">
         <path d="M3 12a9 9 0 1 0 3-6.7M3 4v6h6" />
@@ -753,58 +768,164 @@
           <svg><use href="#icon-x"></use></svg>
         </button>
         <div class="auth-shell">
+          <div class="account-content">
+            <div class="account-content-inner">
+              <div class="account-heading">
+                <h2 id="accountModalTitle">Entrar no Noti</h2>
+                <p id="accountModeHint">Escolha como continuar.</p>
+              </div>
+
+              <div class="modal-tabs auth-legacy-tabs" role="tablist" aria-label="Conta" hidden>
+                <button class="active" id="loginTabButton" type="button">Entrar</button>
+                <button id="signupTabButton" type="button">Criar ID</button>
+              </div>
+
+              <section class="auth-view auth-provider-view" id="authProviderView" data-auth-view="providers">
+                <div class="auth-provider-stack" aria-label="Formas de autenticação">
+                  <button class="firebase-provider-button" id="googleAuthButton" type="button" title="Continuar com Google">
+                    <span class="google-provider-mark" aria-hidden="true">G</span>
+                    <span id="googleAuthLabel">Login com Google</span>
+                  </button>
+                  <button class="firebase-provider-button" id="githubAuthButton" type="button" title="Continuar com GitHub">
+                    <svg aria-hidden="true"><use href="#icon-github"></use></svg>
+                    <span id="githubAuthLabel">Login com GitHub</span>
+                  </button>
+                  <button class="firebase-provider-button" id="emailAuthButton" type="button" title="Continuar com e-mail">
+                    <svg aria-hidden="true"><use href="#icon-mail"></use></svg>
+                    <span id="emailAuthLabel">Login com e-mail</span>
+                  </button>
+                </div>
+                <p class="account-switch"><span id="accountSwitchLead">Não tem ID?</span> <button id="accountSwitchButton" type="button">Criar ID</button></p>
+              </section>
+
+              <form class="account-form auth-step-form" id="loginForm" hidden>
+                <section class="auth-view auth-step" data-auth-view="login-identifier" hidden>
+                  <label class="auth-field-label" for="loginIdentifierInput">E-mail ou User ID</label>
+                  <div class="auth-input-shell">
+                    <input id="loginIdentifierInput" type="text" autocomplete="username" placeholder="E-mail ou @usuario" required />
+                    <button class="auth-input-action" id="loginIdentifierArrow" type="button" aria-label="Avançar">
+                      <svg><use href="#icon-arrow-right"></use></svg>
+                    </button>
+                  </div>
+                  <div class="auth-step-actions">
+                    <button class="secondary-action" id="loginIdentifierBack" type="button">Voltar</button>
+                    <button class="primary-action filled" id="loginIdentifierNext" type="button">Próximo</button>
+                  </div>
+                </section>
+                <section class="auth-view auth-step" data-auth-view="login-password" hidden>
+                  <label class="auth-field-label" for="loginPasswordInput">Senha</label>
+                  <div class="auth-input-shell">
+                    <input id="loginPasswordInput" type="password" autocomplete="current-password" placeholder="Digite sua senha" required />
+                    <button class="auth-input-action" type="button" data-password-toggle="loginPasswordInput" aria-label="Mostrar senha">
+                      <svg><use href="#icon-eye"></use></svg>
+                    </button>
+                  </div>
+                  <div class="auth-step-actions">
+                    <button class="secondary-action" id="loginPasswordBack" type="button">Voltar</button>
+                    <button class="primary-action filled" type="submit">Entrar</button>
+                  </div>
+                </section>
+              </form>
+
+              <form class="account-form auth-step-form" id="signupForm" hidden>
+                <section class="auth-view auth-step signup-name-step" data-auth-view="signup-name" hidden>
+                  <label class="photo-picker signup-photo-card" title="Escolher foto de perfil">
+                    <span id="signupPhotoPreview"><svg><use href="#icon-user"></use></svg></span>
+                    <span class="signup-photo-badge"><svg><use href="#icon-camera"></use></svg></span>
+                    <input id="signupPhotoInput" type="file" accept="image/*" hidden />
+                  </label>
+                  <label class="auth-field-label" for="signupNameInput">Nome</label>
+                  <input class="auth-name-input" id="signupNameInput" type="text" autocomplete="name" placeholder="Seu nome" required />
+                  <div class="auth-step-actions">
+                    <button class="secondary-action" id="signupNameBack" type="button">Voltar</button>
+                    <button class="primary-action filled" id="signupNameNext" type="button">Próximo</button>
+                  </div>
+                </section>
+                <section class="auth-view auth-step" data-auth-view="signup-username" hidden>
+                  <label class="auth-field-label" for="signupUsernameInput">User ID</label>
+                  <div class="auth-input-shell auth-username-shell">
+                    <input id="signupUsernameInput" type="text" autocomplete="username" value="@" spellcheck="false" required />
+                    <span class="auth-field-status" id="signupUsernameStatus" aria-live="polite"></span>
+                  </div>
+                  <div class="auth-step-actions">
+                    <button class="secondary-action" id="signupUsernameBack" type="button">Voltar</button>
+                    <button class="primary-action filled" id="signupUsernameNext" type="button">Próximo</button>
+                  </div>
+                </section>
+                <section class="auth-view auth-step" data-auth-view="signup-email" hidden>
+                  <label class="auth-field-label" for="signupEmailInput">E-mail</label>
+                  <div class="auth-input-shell">
+                    <input id="signupEmailInput" type="email" autocomplete="email" placeholder="voce@exemplo.com" required />
+                    <button class="auth-input-action" id="signupEmailArrow" type="button" aria-label="Avançar">
+                      <svg><use href="#icon-arrow-right"></use></svg>
+                    </button>
+                  </div>
+                  <div class="auth-step-actions">
+                    <button class="secondary-action" id="signupEmailBack" type="button">Voltar</button>
+                    <button class="primary-action filled" id="signupEmailNext" type="button">Próximo</button>
+                  </div>
+                </section>
+                <section class="auth-view auth-step" data-auth-view="signup-password" hidden>
+                  <label class="auth-field-label" for="signupPasswordInput">Senha</label>
+                  <div class="auth-input-shell">
+                    <input id="signupPasswordInput" type="password" autocomplete="new-password" minlength="6" placeholder="Crie uma senha" required />
+                    <button class="auth-input-action" type="button" data-password-toggle="signupPasswordInput" aria-label="Mostrar senha">
+                      <svg><use href="#icon-eye"></use></svg>
+                    </button>
+                  </div>
+                  <label class="auth-field-label" for="signupPasswordConfirmInput">Confirmar senha</label>
+                  <div class="auth-input-shell">
+                    <input id="signupPasswordConfirmInput" type="password" autocomplete="new-password" minlength="6" placeholder="Repita sua senha" required />
+                    <button class="auth-input-action" type="button" data-password-toggle="signupPasswordConfirmInput" aria-label="Mostrar senha">
+                      <svg><use href="#icon-eye"></use></svg>
+                    </button>
+                  </div>
+                  <div class="auth-step-actions">
+                    <button class="secondary-action" id="signupPasswordBack" type="button">Voltar</button>
+                    <button class="primary-action filled" type="submit">Entrar</button>
+                  </div>
+                </section>
+
+                <div class="auth-hidden-fields" hidden>
+                  <select id="signupCountrySelect" aria-label="País do telefone"><option value="BR">Brasil</option></select>
+                  <input id="signupPhoneInput" type="tel" value="" />
+                </div>
+              </form>
+
+              <form class="account-form auth-step-form social-profile-form" id="socialProfileForm" hidden>
+                <section class="auth-view auth-step social-profile-step" data-auth-view="signup-social" hidden>
+                  <label class="photo-picker signup-photo-card" title="Escolher foto de perfil">
+                    <span id="socialProfilePhotoPreview"><svg><use href="#icon-user"></use></svg></span>
+                    <span class="signup-photo-badge"><svg><use href="#icon-camera"></use></svg></span>
+                    <input id="socialProfilePhotoInput" type="file" accept="image/*" hidden />
+                  </label>
+                  <div class="social-profile-identity">
+                    <strong id="socialProfileName">Seu nome</strong>
+                    <span id="socialProfileEmail">seu@email.com</span>
+                    <small id="socialProfileProvider">Conta conectada</small>
+                  </div>
+                  <label class="auth-field-label" for="socialProfileUsernameInput">User ID</label>
+                  <div class="auth-input-shell auth-username-shell">
+                    <input id="socialProfileUsernameInput" type="text" autocomplete="username" value="@" spellcheck="false" required />
+                    <span class="auth-field-status" id="socialProfileUsernameStatus" aria-live="polite"></span>
+                  </div>
+                  <div class="auth-step-actions">
+                    <button class="secondary-action" id="socialProfileCancel" type="button">Cancelar</button>
+                    <button class="primary-action filled" id="socialProfileSubmit" type="submit">Concluir cadastro</button>
+                  </div>
+                </section>
+              </form>
+            </div>
+            <p class="account-legal">Ao continuar, você concorda com os <a href="terms.html">Termos de Uso</a> e a <a href="privacy.html">Política de Privacidade</a> da Noti.</p>
+          </div>
           <aside class="account-visual" aria-hidden="true">
-            <img class="account-brand-mark" id="accountBrandMark" src="assets/white-logo-noti.png" alt="Noti." />
-            <span>by Lopsz</span>
+            <div class="account-brand-lockup">
+              <img class="account-brand-mark" id="accountBrandMark" src="assets/white-logo-noti.png" alt="Noti." />
+              <span>by Lopsz</span>
+            </div>
             <h2>Facilite sua rotina<br />com o Noti.</h2>
             <p>Organização aprimorada para qualquer ocasião.</p>
           </aside>
-          <div class="account-content">
-            <div class="account-heading">
-              <h2 id="accountModalTitle">Comece agora</h2>
-              <p id="accountModeHint">Entre na conta salva neste navegador.</p>
-            </div>
-            <div class="modal-tabs" role="tablist" aria-label="Conta">
-              <button class="active" id="loginTabButton" type="button">Entrar</button>
-              <button id="signupTabButton" type="button">Criar ID</button>
-            </div>
-            <div class="firebase-provider-row" aria-label="Outras formas de entrar">
-              <button class="firebase-provider-button" id="googleAuthButton" type="button" title="Continuar com Google">
-                <span class="google-provider-mark" aria-hidden="true">G</span>
-                <span>Google</span>
-              </button>
-              <button class="firebase-provider-button" id="githubAuthButton" type="button" title="Continuar com GitHub">
-                <svg aria-hidden="true"><use href="#icon-github"></use></svg>
-                <span>GitHub</span>
-              </button>
-            </div>
-            <div class="firebase-provider-divider"><span>ou continue com e-mail</span></div>
-            <form class="account-form" id="loginForm">
-              <label>E-mail ou usuário<input id="loginIdentifierInput" type="text" autocomplete="username" placeholder="voc&ecirc;@exemplo.com ou @usuario" required /></label>
-              <label>Senha<input id="loginPasswordInput" type="password" autocomplete="current-password" placeholder="••••••••" required /></label>
-              <label class="terms-line"><input type="checkbox" checked /> Aceito os termos e a privacidade</label>
-              <button class="primary-action filled" type="submit">Entrar</button>
-              <p class="account-switch">Não tem ID? <button type="button" data-account-switch="signup">Criar ID</button></p>
-            </form>
-            <form class="account-form" id="signupForm" hidden>
-              <label class="photo-picker signup-photo-card"><span id="signupPhotoPreview"><svg><use href="#icon-user"></use></svg></span><strong>Foto de perfil</strong><input id="signupPhotoInput" type="file" accept="image/*" hidden /></label>
-              <label>Nome<input id="signupNameInput" type="text" autocomplete="name" placeholder="Seu nome" required /></label>
-              <label>ID<input id="signupUsernameInput" type="text" autocomplete="username" value="@" required /></label>
-              <label>E-mail<input id="signupEmailInput" type="email" autocomplete="email" placeholder="voc&ecirc;@exemplo.com" required /></label>
-              <label class="phone-label">Celular (opcional)
-                <span class="phone-field">
-                  <span class="country-select-wrap">
-                    <select class="country-select" id="signupCountrySelect" aria-label="Pa&iacute;s do telefone"></select>
-                    <svg aria-hidden="true"><use href="#icon-chevron"></use></svg>
-                  </span>
-                  <input id="signupPhoneInput" type="tel" autocomplete="tel" inputmode="tel" placeholder="DDD e n&uacute;mero" />
-                </span>
-              </label>
-              <label>Senha<input id="signupPasswordInput" type="password" autocomplete="new-password" minlength="6" required /></label>
-              <button class="primary-action filled" type="submit">Criar ID</button>
-              <p class="account-switch">Já tem ID? <button type="button" data-account-switch="login">Entrar</button></p>
-            </form>
-          </div>
         </div>
       </section>
 

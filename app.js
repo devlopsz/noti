@@ -21,7 +21,7 @@ const FIREBASE_CONFIG = Object.freeze({
 const FIREBASE_SYNC_META_KEY = "noti-firebase-sync-meta-v1";
 const FIREBASE_SYNC_CHUNK_SIZE = 450000;
 const FIREBASE_SYNC_DEBOUNCE_MS = 1400;
-const PAGES_UPDATE_ASSETS = ["index.html", "app.js", "firebase-integration.js", "styles.css"];
+const PAGES_UPDATE_ASSETS = ["index.html", "app.js", "firebase-integration.js", "styles.css", "terms.html", "privacy.html", "legal.css", "legal.js"];
 const PAGES_UPDATE_CHECK_INTERVAL = 120000;
 const DEFAULT_TOOLBAR_ITEMS = ["theme", "separator-main", "attach", "draw", "drawingBlock", "checklistBlock", "pin", "archive", "delete", "restore", "search", "settings", "account"];
 const TOOLBAR_LABELS = {
@@ -358,7 +358,12 @@ let users = loadUsers();
 let currentUserId = localStorage.getItem(CURRENT_USER_KEY) || "";
 let preferences = loadPreferences();
 let currentSignupPhoto = "";
+let currentSocialProfilePhoto = "";
+let pendingSocialProfile = null;
 let pendingProfilePhoto = "";
+let activeAccountPanel = "login";
+let activeAccountStep = "providers";
+let usernameAvailabilityRequest = 0;
 let currentView = "all";
 let selectedNoteId = null;
 let draggedNoteId = null;
@@ -563,20 +568,51 @@ const elements = {
   closeAccountModal: $("#closeAccountModal"),
   loginTabButton: $("#loginTabButton"),
   signupTabButton: $("#signupTabButton"),
+  authProviderView: $("#authProviderView"),
   googleAuthButton: $("#googleAuthButton"),
   githubAuthButton: $("#githubAuthButton"),
+  googleAuthLabel: $("#googleAuthLabel"),
+  githubAuthLabel: $("#githubAuthLabel"),
+  emailAuthButton: $("#emailAuthButton"),
+  emailAuthLabel: $("#emailAuthLabel"),
+  accountSwitchLead: $("#accountSwitchLead"),
+  accountSwitchButton: $("#accountSwitchButton"),
   loginForm: $("#loginForm"),
   signupForm: $("#signupForm"),
   loginIdentifierInput: $("#loginIdentifierInput"),
+  loginIdentifierArrow: $("#loginIdentifierArrow"),
+  loginIdentifierBack: $("#loginIdentifierBack"),
+  loginIdentifierNext: $("#loginIdentifierNext"),
   loginPasswordInput: $("#loginPasswordInput"),
+  loginPasswordBack: $("#loginPasswordBack"),
   signupPhotoInput: $("#signupPhotoInput"),
   signupPhotoPreview: $("#signupPhotoPreview"),
   signupNameInput: $("#signupNameInput"),
+  signupNameBack: $("#signupNameBack"),
+  signupNameNext: $("#signupNameNext"),
   signupUsernameInput: $("#signupUsernameInput"),
+  signupUsernameStatus: $("#signupUsernameStatus"),
+  signupUsernameBack: $("#signupUsernameBack"),
+  signupUsernameNext: $("#signupUsernameNext"),
   signupEmailInput: $("#signupEmailInput"),
+  signupEmailArrow: $("#signupEmailArrow"),
+  signupEmailBack: $("#signupEmailBack"),
+  signupEmailNext: $("#signupEmailNext"),
   signupPhoneInput: $("#signupPhoneInput"),
   signupCountrySelect: $("#signupCountrySelect"),
   signupPasswordInput: $("#signupPasswordInput"),
+  signupPasswordConfirmInput: $("#signupPasswordConfirmInput"),
+  signupPasswordBack: $("#signupPasswordBack"),
+  socialProfileForm: $("#socialProfileForm"),
+  socialProfilePhotoInput: $("#socialProfilePhotoInput"),
+  socialProfilePhotoPreview: $("#socialProfilePhotoPreview"),
+  socialProfileName: $("#socialProfileName"),
+  socialProfileEmail: $("#socialProfileEmail"),
+  socialProfileProvider: $("#socialProfileProvider"),
+  socialProfileUsernameInput: $("#socialProfileUsernameInput"),
+  socialProfileUsernameStatus: $("#socialProfileUsernameStatus"),
+  socialProfileCancel: $("#socialProfileCancel"),
+  socialProfileSubmit: $("#socialProfileSubmit"),
   settingsModal: $("#settingsModal"),
   closeSettingsModal: $("#closeSettingsModal"),
   settingsHeaderAvatar: $("#settingsHeaderAvatar"),
@@ -687,11 +723,59 @@ function bindEvents() {
   elements.signupTabButton.addEventListener("click", () => setActiveAccountPanel("signup"));
   elements.loginForm.addEventListener("submit", handleLogin);
   elements.signupForm.addEventListener("submit", handleSignup);
+  elements.socialProfileForm?.addEventListener("submit", handleSocialProfileSubmit);
   elements.googleAuthButton?.addEventListener("click", () => handleFirebaseProviderLogin("google"));
   elements.githubAuthButton?.addEventListener("click", () => handleFirebaseProviderLogin("github"));
+  elements.emailAuthButton?.addEventListener("click", startEmailAccountFlow);
+  elements.accountSwitchButton?.addEventListener("click", () => setActiveAccountPanel(activeAccountPanel === "login" ? "signup" : "login"));
+  elements.loginIdentifierArrow?.addEventListener("click", advanceLoginIdentifier);
+  elements.loginIdentifierNext?.addEventListener("click", advanceLoginIdentifier);
+  elements.loginIdentifierBack?.addEventListener("click", () => setAccountFlowStep("providers"));
+  elements.loginPasswordBack?.addEventListener("click", () => setAccountFlowStep("identifier"));
+  elements.signupNameBack?.addEventListener("click", () => setAccountFlowStep("providers"));
+  elements.signupNameNext?.addEventListener("click", advanceSignupName);
+  elements.signupUsernameBack?.addEventListener("click", () => setAccountFlowStep("name"));
+  elements.signupUsernameNext?.addEventListener("click", advanceSignupUsername);
+  elements.signupEmailArrow?.addEventListener("click", advanceSignupEmail);
+  elements.signupEmailBack?.addEventListener("click", () => setAccountFlowStep("username"));
+  elements.signupEmailNext?.addEventListener("click", advanceSignupEmail);
+  elements.signupPasswordBack?.addEventListener("click", () => setAccountFlowStep("email"));
+  elements.socialProfileCancel?.addEventListener("click", cancelSocialProfileCompletion);
+  elements.accountModal?.querySelectorAll("[data-password-toggle]").forEach((button) => {
+    button.addEventListener("click", () => toggleAccountPasswordVisibility(button));
+  });
+  elements.loginIdentifierInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      advanceLoginIdentifier();
+    }
+  });
+  elements.signupNameInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      advanceSignupName();
+    }
+  });
+  elements.signupUsernameInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      advanceSignupUsername();
+    }
+  });
+  elements.signupEmailInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      advanceSignupEmail();
+    }
+  });
   elements.signupUsernameInput.addEventListener("input", () => keepUsernamePrefix(elements.signupUsernameInput));
+  elements.signupUsernameInput.addEventListener("input", clearSignupUsernameStatus);
   elements.signupUsernameInput.addEventListener("blur", () => normalizeUsernameInput(elements.signupUsernameInput));
   elements.signupPhotoInput.addEventListener("change", handleSignupPhoto);
+  elements.socialProfileUsernameInput?.addEventListener("input", () => keepUsernamePrefix(elements.socialProfileUsernameInput));
+  elements.socialProfileUsernameInput?.addEventListener("input", clearSocialProfileUsernameStatus);
+  elements.socialProfileUsernameInput?.addEventListener("blur", () => normalizeUsernameInput(elements.socialProfileUsernameInput));
+  elements.socialProfilePhotoInput?.addEventListener("change", handleSocialProfilePhoto);
   elements.settingsTabs.forEach((button) => {
     button.addEventListener("click", () => setActiveSettingsTab(button.dataset.settingsTab));
   });
@@ -1254,6 +1338,7 @@ function buildBackupProfile(user) {
     phoneCountry: getPhoneCountry(user.phoneCountry || "BR").code,
     photo: user.photo || "",
     cloudAccount: Boolean(user.cloudAccount),
+    profileComplete: user.profileComplete !== false,
     providerIds: Array.isArray(user.providerIds) ? user.providerIds.slice() : [],
     timeGameScore: normalizeNumber(user.timeGameScore, 0),
     notisualScore: normalizeNumber(user.notisualScore, 0),
@@ -8651,6 +8736,7 @@ function loadUsers() {
           password: typeof user.password === "string" ? user.password : "",
           photo: typeof user.photo === "string" ? user.photo : "",
           cloudAccount: Boolean(user.cloudAccount),
+          profileComplete: user.profileComplete !== false,
           providerIds: Array.isArray(user.providerIds) ? user.providerIds.filter((value) => typeof value === "string") : [],
           timeGameScore: normalizeNumber(user.timeGameScore, 0),
           notisualScore: normalizeNumber(user.notisualScore, 0),
@@ -8723,15 +8809,12 @@ function openAccountModal(panel = "login") {
   elements.profileEditDialog.hidden = true;
   elements.folderEditDialog.hidden = true;
   if (elements.autocorrectDialog) elements.autocorrectDialog.hidden = true;
+  document.body.classList.add("account-page-open");
   document.body.classList.remove("mobile-settings-page");
   elements.closeSettingsModal.innerHTML = "<span>‹</span> Voltar ao aplicativo";
   setActiveAccountPanel(panel);
   closeSidebar();
   updateMobileLayoutState();
-  setTimeout(() => {
-    const target = panel === "signup" ? elements.signupNameInput : elements.loginIdentifierInput;
-    target.focus();
-  }, 0);
 }
 
 function openProfileAccountEntry(event) {
@@ -8741,25 +8824,331 @@ function openProfileAccountEntry(event) {
 }
 
 function setActiveAccountPanel(panel) {
-  const isSignup = panel === "signup";
-  elements.loginTabButton.classList.toggle("active", !isSignup);
-  elements.signupTabButton.classList.toggle("active", isSignup);
-  elements.loginForm.hidden = isSignup;
-  elements.signupForm.hidden = !isSignup;
-  const hint = document.querySelector("#accountModeHint");
-  if (hint) hint.textContent = isSignup
-    ? "Crie sua conta para sincronizar o Noti em todos os dispositivos."
-    : "Entre para acessar suas notas e preferências.";
+  activeAccountPanel = panel === "signup" ? "signup" : "login";
+  const isSignup = activeAccountPanel === "signup";
+  elements.loginTabButton?.classList.toggle("active", !isSignup);
+  elements.signupTabButton?.classList.toggle("active", isSignup);
+  if (elements.googleAuthLabel) elements.googleAuthLabel.textContent = isSignup ? "Cadastre-se com Google" : "Login com Google";
+  if (elements.githubAuthLabel) elements.githubAuthLabel.textContent = isSignup ? "Cadastre-se com GitHub" : "Login com GitHub";
+  if (elements.emailAuthLabel) elements.emailAuthLabel.textContent = isSignup ? "Cadastre-se com e-mail" : "Login com e-mail";
+  if (elements.accountSwitchLead) elements.accountSwitchLead.textContent = isSignup ? "Já tem ID?" : "Não tem ID?";
+  if (elements.accountSwitchButton) elements.accountSwitchButton.textContent = isSignup ? "Entrar" : "Criar ID";
+  if (elements.googleAuthButton) elements.googleAuthButton.title = isSignup ? "Cadastrar com Google" : "Entrar com Google";
+  if (elements.githubAuthButton) elements.githubAuthButton.title = isSignup ? "Cadastrar com GitHub" : "Entrar com GitHub";
+  if (elements.emailAuthButton) elements.emailAuthButton.title = isSignup ? "Cadastrar com e-mail" : "Entrar com e-mail";
+  setAccountFlowStep("providers");
+}
+
+function setAccountFlowStep(step) {
+  activeAccountStep = step;
+  const isProviderStep = step === "providers";
+  const isSocialProfileStep = step === "social";
+  const targetView = isProviderStep ? "providers" : `${activeAccountPanel}-${step}`;
+  elements.loginForm.hidden = isProviderStep || activeAccountPanel !== "login";
+  elements.signupForm.hidden = isProviderStep || isSocialProfileStep || activeAccountPanel !== "signup";
+  if (elements.socialProfileForm) elements.socialProfileForm.hidden = !isSocialProfileStep || activeAccountPanel !== "signup";
+  elements.accountModal.querySelectorAll("[data-auth-view]").forEach((view) => {
+    view.hidden = view.dataset.authView !== targetView;
+  });
+
+  const copy = {
+    "login-providers": ["Entrar no Noti", "Escolha como continuar."],
+    "login-identifier": ["Entrar com e-mail", "Use seu e-mail ou User ID para continuar."],
+    "login-password": ["Digite sua senha", elements.loginIdentifierInput?.value.trim() || "Sua conta Noti"],
+    "signup-providers": ["Crie seu ID", "Escolha como criar sua conta."],
+    "signup-name": ["Qual é o seu nome?", "Adicione também uma foto, se quiser."],
+    "signup-username": ["Escolha seu User ID", "Ele deve começar com @ e ser único."],
+    "signup-email": ["Qual é o seu e-mail?", "Você usará este endereço para entrar no Noti."],
+    "signup-password": ["Crie uma senha", "Use pelo menos 6 caracteres."],
+    "signup-social": ["Complete seu ID", "Escolha uma foto e um User ID para concluir."],
+  };
+  const copyKey = `${activeAccountPanel}-${step}`;
+  const [titleText, hintText] = copy[copyKey] || copy[`${activeAccountPanel}-providers`];
   const title = document.querySelector("#accountModalTitle");
-  if (title) title.textContent = isSignup ? "Criar conta" : "Entrar no Noti";
+  const hint = document.querySelector("#accountModeHint");
+  if (title) title.textContent = titleText;
+  if (hint) hint.textContent = hintText;
+  elements.accountModal.dataset.accountMode = activeAccountPanel;
+  elements.accountModal.dataset.accountStep = step;
+
+  const focusTargets = {
+    "login-identifier": elements.loginIdentifierInput,
+    "login-password": elements.loginPasswordInput,
+    "signup-name": elements.signupNameInput,
+    "signup-username": elements.signupUsernameInput,
+    "signup-email": elements.signupEmailInput,
+    "signup-password": elements.signupPasswordInput,
+    "signup-social": elements.socialProfileUsernameInput,
+  };
+  window.setTimeout(() => {
+    if (isProviderStep) elements.googleAuthButton?.focus();
+    else focusTargets[targetView]?.focus();
+  }, 0);
+}
+
+function startEmailAccountFlow() {
+  setAccountFlowStep(activeAccountPanel === "signup" ? "name" : "identifier");
+}
+
+function advanceLoginIdentifier() {
+  const identifier = elements.loginIdentifierInput.value.trim();
+  const isUsername = identifier.startsWith("@") && isValidNotiUsername(normalizeUsername(identifier));
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+  if (!isUsername && !isEmail) {
+    showToast("Digite um e-mail válido ou um User ID com @");
+    elements.loginIdentifierInput.focus();
+    return;
+  }
+  setAccountFlowStep("password");
+}
+
+function advanceSignupName() {
+  const name = elements.signupNameInput.value.trim();
+  if (name.length < 2) {
+    showToast("Digite seu nome para continuar");
+    elements.signupNameInput.focus();
+    return;
+  }
+  setAccountFlowStep("username");
+}
+
+async function advanceSignupUsername() {
+  const username = normalizeUsername(elements.signupUsernameInput.value);
+  elements.signupUsernameInput.value = username;
+  if (!isValidNotiUsername(username)) {
+    setSignupUsernameStatus("Use de 3 a 24 letras, números, pontos ou _", "unavailable");
+    elements.signupUsernameInput.focus();
+    return;
+  }
+
+  const localConflict = users.some((user) => user.username?.toLowerCase() === username.toLowerCase());
+  if (localConflict) {
+    setSignupUsernameStatus("User ID indisponível", "unavailable");
+    return;
+  }
+
+  const requestId = ++usernameAvailabilityRequest;
+  setSignupUsernameStatus("Verificando...", "");
+  elements.signupUsernameNext.disabled = true;
+  try {
+    const result = typeof checkFirebaseUsernameAvailability === "function"
+      ? await checkFirebaseUsernameAvailability(username)
+      : { available: true, verified: false };
+    if (requestId !== usernameAvailabilityRequest) return;
+    if (!result.available) {
+      setSignupUsernameStatus("User ID indisponível", "unavailable");
+      return;
+    }
+    setSignupUsernameStatus("Disponível", "available");
+    setAccountFlowStep("email");
+  } catch (error) {
+    console.warn("Não foi possível verificar o User ID agora.", error);
+    setSignupUsernameStatus("Tente novamente", "unavailable");
+    showToast("Não foi possível verificar esse User ID agora");
+  } finally {
+    if (requestId === usernameAvailabilityRequest) elements.signupUsernameNext.disabled = false;
+  }
+}
+
+async function advanceSignupEmail() {
+  const email = elements.signupEmailInput.value.trim().toLowerCase();
+  elements.signupEmailInput.value = email;
+  if (!email || !elements.signupEmailInput.checkValidity()) {
+    showToast("Digite um e-mail válido");
+    elements.signupEmailInput.focus();
+    return;
+  }
+  if (users.some((user) => user.email === email)) {
+    showToast("Este e-mail já possui um ID");
+    return;
+  }
+
+  elements.signupEmailNext.disabled = true;
+  if (elements.signupEmailArrow) elements.signupEmailArrow.disabled = true;
+  try {
+    if (firebaseAuth?.fetchSignInMethodsForEmail) {
+      const methods = await firebaseAuth.fetchSignInMethodsForEmail(email);
+      if (methods.length) {
+        showToast("Este e-mail já possui um ID");
+        return;
+      }
+    }
+    setAccountFlowStep("password");
+  } catch (error) {
+    if (error?.code === "auth/invalid-email") {
+      showToast("Digite um e-mail válido");
+      return;
+    }
+    console.warn("A verificação antecipada do e-mail não foi concluída.", error);
+    setAccountFlowStep("password");
+  } finally {
+    elements.signupEmailNext.disabled = false;
+    if (elements.signupEmailArrow) elements.signupEmailArrow.disabled = false;
+  }
+}
+
+function toggleAccountPasswordVisibility(button) {
+  const input = document.getElementById(button.dataset.passwordToggle || "");
+  if (!input) return;
+  const shouldShow = input.type === "password";
+  input.type = shouldShow ? "text" : "password";
+  button.setAttribute("aria-label", shouldShow ? "Ocultar senha" : "Mostrar senha");
+  button.classList.toggle("active", shouldShow);
+  input.focus({ preventScroll: true });
+}
+
+function isValidNotiUsername(username) {
+  return /^@[a-z0-9._]{3,24}$/i.test(String(username || ""));
+}
+
+function clearSignupUsernameStatus() {
+  usernameAvailabilityRequest += 1;
+  setSignupUsernameStatus("", "");
+}
+
+function setSignupUsernameStatus(message, stateName) {
+  if (!elements.signupUsernameStatus) return;
+  elements.signupUsernameStatus.textContent = message;
+  elements.signupUsernameStatus.classList.toggle("available", stateName === "available");
+  elements.signupUsernameStatus.classList.toggle("unavailable", stateName === "unavailable");
+}
+
+function openSocialProfileCompletion(profile) {
+  pendingSocialProfile = clonePlainData(profile || {});
+  const name = String(profile?.name || "Usuário").trim() || "Usuário";
+  const email = String(profile?.email || "").trim().toLowerCase();
+  const providerLabel = String(profile?.providerLabel || "conta conectada");
+  currentSocialProfilePhoto = String(profile?.photo || "");
+
+  openAccountModal("signup");
+  elements.socialProfileName.textContent = name;
+  elements.socialProfileEmail.textContent = email || "E-mail protegido pelo provedor";
+  elements.socialProfileProvider.textContent = `Autenticação pelo ${providerLabel}`;
+  elements.socialProfileUsernameInput.value = createSuggestedNotiUsername(name, email);
+  clearSocialProfileUsernameStatus();
+  renderAvatar(elements.socialProfilePhotoPreview, currentSocialProfilePhoto ? { photo: currentSocialProfilePhoto } : null);
+  setAccountFlowStep("social");
+}
+
+function createSuggestedNotiUsername(name, email) {
+  const source = String(name || email.split("@")[0] || "usuario")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._]+/g, "")
+    .slice(0, 24);
+  const safeSource = source.length >= 3 ? source : `usuario${Math.floor(100 + Math.random() * 900)}`;
+  return normalizeUsername(safeSource);
+}
+
+function clearSocialProfileUsernameStatus() {
+  usernameAvailabilityRequest += 1;
+  setSocialProfileUsernameStatus("", "");
+}
+
+function setSocialProfileUsernameStatus(message, stateName) {
+  if (!elements.socialProfileUsernameStatus) return;
+  elements.socialProfileUsernameStatus.textContent = message;
+  elements.socialProfileUsernameStatus.classList.toggle("available", stateName === "available");
+  elements.socialProfileUsernameStatus.classList.toggle("unavailable", stateName === "unavailable");
+}
+
+async function handleSocialProfilePhoto() {
+  const file = elements.socialProfilePhotoInput?.files?.[0];
+  if (elements.socialProfilePhotoInput) elements.socialProfilePhotoInput.value = "";
+  if (!file) return;
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    showToast(`Foto acima de ${formatFileSize(MAX_ATTACHMENT_BYTES)} ignorada`);
+    return;
+  }
+  try {
+    currentSocialProfilePhoto = await readProfilePhotoAsDataUrl(file);
+    renderAvatar(elements.socialProfilePhotoPreview, { photo: currentSocialProfilePhoto });
+  } catch (error) {
+    console.warn("Não foi possível processar a foto do perfil social.", error);
+    showToast("Não foi possível processar essa foto");
+  }
+}
+
+async function handleSocialProfileSubmit(event) {
+  event.preventDefault();
+  if (!pendingSocialProfile || typeof completeFirebaseSocialAccount !== "function") {
+    showToast("Conecte novamente sua conta para concluir");
+    return;
+  }
+
+  const username = normalizeUsername(elements.socialProfileUsernameInput.value);
+  elements.socialProfileUsernameInput.value = username;
+  if (!isValidNotiUsername(username)) {
+    setSocialProfileUsernameStatus("Use de 3 a 24 letras, números, pontos ou _", "unavailable");
+    elements.socialProfileUsernameInput.focus();
+    return;
+  }
+
+  const requestId = ++usernameAvailabilityRequest;
+  elements.socialProfileSubmit.disabled = true;
+  setSocialProfileUsernameStatus("Verificando...", "");
+  try {
+    const availability = await checkFirebaseUsernameAvailability(username, pendingSocialProfile.uid || "");
+    if (requestId !== usernameAvailabilityRequest) return;
+    if (!availability.available) {
+      setSocialProfileUsernameStatus("User ID indisponível", "unavailable");
+      return;
+    }
+
+    setSocialProfileUsernameStatus("Disponível", "available");
+    const completedProfile = {
+      ...pendingSocialProfile,
+      username,
+      photo: currentSocialProfilePhoto || pendingSocialProfile.photo || "",
+      profileComplete: true,
+      updatedAt: Date.now(),
+    };
+    await completeFirebaseSocialAccount(completedProfile);
+    const providerLabel = completedProfile.providerLabel || "provedor";
+    resetSocialProfileCompletionState();
+    closeModals();
+    showToast(`ID concluído com ${providerLabel}`);
+  } catch (error) {
+    console.warn("Não foi possível concluir o perfil social.", error);
+    setSocialProfileUsernameStatus("Tente novamente", "unavailable");
+    showToast(typeof formatFirebaseAuthError === "function" ? formatFirebaseAuthError(error) : "Não foi possível concluir seu ID");
+  } finally {
+    if (elements.socialProfileSubmit) elements.socialProfileSubmit.disabled = false;
+  }
+}
+
+async function cancelSocialProfileCompletion() {
+  resetSocialProfileCompletionState();
+  if (typeof cancelFirebaseSocialAccountCompletion === "function") {
+    await cancelFirebaseSocialAccountCompletion();
+  }
+  closeModals();
+}
+
+function resetSocialProfileCompletionState() {
+  pendingSocialProfile = null;
+  currentSocialProfilePhoto = "";
+  elements.socialProfileForm?.reset();
+  if (elements.socialProfileUsernameInput) elements.socialProfileUsernameInput.value = "@";
+  if (elements.socialProfileName) elements.socialProfileName.textContent = "Seu nome";
+  if (elements.socialProfileEmail) elements.socialProfileEmail.textContent = "seu@email.com";
+  if (elements.socialProfileProvider) elements.socialProfileProvider.textContent = "Conta conectada";
+  clearSocialProfileUsernameStatus();
+  renderAvatar(elements.socialProfilePhotoPreview, null);
 }
 
 function closeModals() {
+  if (pendingSocialProfile) {
+    void cancelSocialProfileCompletion();
+    return;
+  }
   elements.modalLayer.hidden = true;
   elements.accountModal.hidden = true;
   elements.settingsModal.hidden = true;
   elements.profileEditDialog.hidden = true;
   elements.folderEditDialog.hidden = true;
+  document.body.classList.remove("account-page-open");
   document.body.classList.remove("mobile-settings-page");
   elements.closeSettingsModal.innerHTML = "<span>‹</span> Voltar ao aplicativo";
   updateMobileLayoutState();
@@ -8790,9 +9179,15 @@ async function handleSignup(event) {
   const phone = normalizePhoneNumber(elements.signupPhoneInput.value);
   const phoneCountry = getPhoneCountry(elements.signupCountrySelect.value).code;
   const password = elements.signupPasswordInput.value;
+  const passwordConfirmation = elements.signupPasswordConfirmInput?.value || "";
 
-  if (!name || username.length < 2 || !email || password.length < 6) {
-    showToast("Preencha nome, @usuário, e-mail e senha com pelo menos 6 caracteres");
+  if (!name || !isValidNotiUsername(username) || !email || password.length < 6) {
+    showToast("Revise o nome, User ID, e-mail e a senha");
+    return;
+  }
+  if (password !== passwordConfirmation) {
+    showToast("As senhas não coincidem");
+    elements.signupPasswordConfirmInput?.focus();
     return;
   }
   if (!firebaseAuth) {
@@ -8817,6 +9212,7 @@ async function handleSignup(event) {
     phoneCountry,
     password: "",
     photo: currentSignupPhoto || emailUser?.photo || "",
+    profileComplete: true,
     timeGameScore: normalizeNumber(emailUser?.timeGameScore, 0),
     notisualScore: normalizeNumber(emailUser?.notisualScore, 0),
     createdAt: Number.isFinite(emailUser?.createdAt) ? emailUser.createdAt : now,
@@ -8825,11 +9221,36 @@ async function handleSignup(event) {
 
   setFirebaseAuthBusy(true);
   try {
+    const availability = typeof checkFirebaseUsernameAvailability === "function"
+      ? await checkFirebaseUsernameAvailability(username)
+      : { available: true, verified: false };
+    if (!availability.available) {
+      setSignupUsernameStatus("User ID indisponível", "unavailable");
+      setAccountFlowStep("username");
+      showToast("Esse User ID já foi registrado");
+      return;
+    }
     const credential = await firebaseAuth.createUserWithEmailAndPassword(email, password);
+    if (typeof claimFirebaseUsername === "function") {
+      const claim = await claimFirebaseUsername(username, credential.user.uid);
+      if (!claim.claimed) {
+        try {
+          await credential.user.delete();
+        } catch (deleteError) {
+          console.warn("Não foi possível desfazer o cadastro com User ID duplicado.", deleteError);
+        }
+        firebasePendingProfile = null;
+        setSignupUsernameStatus("User ID indisponível", "unavailable");
+        setAccountFlowStep("username");
+        showToast("Esse User ID acabou de ser registrado por outra pessoa");
+        return;
+      }
+    }
     await credential.user.updateProfile({ displayName: name });
     elements.signupForm.reset();
     elements.signupUsernameInput.value = "@";
     elements.signupCountrySelect.value = "BR";
+    if (elements.signupPasswordConfirmInput) elements.signupPasswordConfirmInput.value = "";
     currentSignupPhoto = "";
     renderAvatar(elements.signupPhotoPreview, null);
     closeModals();
